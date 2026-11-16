@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#8fd3ff" />
+    <title>Slime Rush</title>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game"></canvas>
+
+      <div id="floaters"></div>
+
+      <div id="hud" class="hidden">
+        <div id="xp-bar" class="bar">
+          <div id="xp-fill" class="fill"></div>
+          <span id="level" class="bar-label">Niv. 1</span>
+        </div>
+        <div id="hud-row">
+          <div id="hp-bar" class="bar">
+            <div id="hp-fill" class="fill"></div>
+            <span id="hp-label" class="bar-label">100</span>
+          </div>
+          <span id="timer" class="pill">00:00</span>
+          <span id="kills" class="pill">💀 0</span>
+          <span id="gold" class="pill">🪙 0</span>
+          <button id="btn-pause" class="pill pill-btn" aria-label="Mettre en pause">⏸</button>
+        </div>
+        <div id="special-box">
+          <span id="special-hint" class="pill hidden">Touchez la zone à frapper</span>
+          <div id="special"><span>💥</span></div>
+        </div>
+      </div>
+
+      <div id="joystick" class="hidden"><div id="knob"></div></div>
+      <div id="hit-flash"></div>
+
+      <div id="overlay-start" class="overlay menu">
+        <div class="menu-top">
+          <h1>Slime Rush</h1>
+          <div class="menu-info">
+            <span id="menu-gold" class="pill">🪙 0</span>
+            <span id="best-start" class="pill">🏆 --:--</span>
+            <button id="btn-sound" class="pill pill-btn" aria-label="Activer ou couper le son">🔊</button>
+          </div>
+        </div>
+        <div class="menu-bottom">
+          <div id="characters"></div>
+          <div class="menu-actions">
+            <button id="btn-shop" class="btn btn-alt">Boutique</button>
+            <button id="btn-start" class="btn" disabled>Chargement…</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="overlay-shop" class="overlay hidden">
+        <h2>Boutique</h2>
+        <p class="hint">Améliorations permanentes, conservées d'une partie à l'autre</p>
+        <span id="shop-gold" class="pill">🪙 0</span>
+        <div id="shop-items"></div>
+        <button id="btn-shop-back" class="btn btn-alt">Retour</button>
+      </div>
+
+      <div id="overlay-levelup" class="overlay hidden">
+        <h2>Niveau supérieur !</h2>
+        <p class="hint">Choisissez une amélioration</p>
+        <div id="cards"></div>
+      </div>
+
+      <div id="overlay-pause" class="overlay hidden">
+        <h2>Pause</h2>
+        <button id="btn-resume" class="btn">Reprendre</button>
+        <button id="btn-quit" class="btn btn-alt">Quitter la partie</button>
+        <p class="hint">En quittant, vous conservez l'or gagné pendant cette partie.</p>
+      </div>
+
+      <div id="overlay-gameover" class="overlay hidden">
+        <h2>Partie terminée</h2>
+        <p id="gameover-stats" class="stats"></p>
+        <p id="best-gameover" class="best"></p>
+        <div class="menu-actions">
+          <button id="btn-menu" class="btn btn-alt">Menu</button>
+          <button id="btn-restart" class="btn">Rejouer</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

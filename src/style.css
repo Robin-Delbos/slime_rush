@@ -1,0 +1,575 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: #8fd3ff;
+  font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  color: #fff;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.hidden {
+  display: none !important;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* ---------- HUD ---------- */
+
+#hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: calc(8px + env(safe-area-inset-top)) 12px 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+  font-weight: 800;
+}
+
+.bar {
+  position: relative;
+  height: 22px;
+  border-radius: 12px;
+  background: rgba(20, 30, 60, 0.55);
+  border: 3px solid #fff;
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  width: 0;
+  border-radius: 8px;
+  transition: width 0.15s ease-out;
+}
+
+#xp-fill {
+  background: linear-gradient(90deg, #38e1ff, #7b7bff);
+}
+
+#hp-fill {
+  background: linear-gradient(90deg, #ff5d73, #ff9a5a);
+  width: 100%;
+}
+
+.bar-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+}
+
+#hud-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#hp-bar {
+  flex: 1;
+  max-width: 260px;
+}
+
+.pill {
+  padding: 3px 12px;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(20, 30, 60, 0.55);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pill-btn {
+  padding: 3px 14px;
+  /* Le HUD laisse passer les appuis vers le jeu ; ses boutons, eux, doivent les recevoir. */
+  pointer-events: auto;
+}
+
+#timer {
+  margin-left: auto;
+}
+
+/* ---------- Jauge d'attaque spéciale ---------- */
+
+#special-box {
+  position: fixed;
+  right: 14px;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#special {
+  --charge: 0deg;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  /* Remplissage circulaire proportionnel à la charge. */
+  background: conic-gradient(#ffb13d var(--charge), rgba(20, 30, 60, 0.6) 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  opacity: 0.75;
+}
+
+#special span {
+  filter: grayscale(1);
+}
+
+#special.ready {
+  opacity: 1;
+  box-shadow: 0 0 18px 6px rgba(255, 177, 61, 0.85);
+  animation: special-pulse 0.7s ease-in-out infinite alternate;
+}
+
+#special.ready span {
+  filter: none;
+}
+
+#special-hint {
+  background: rgba(255, 140, 30, 0.9);
+}
+
+@keyframes special-pulse {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.14);
+  }
+}
+
+/* ---------- Joystick et effets ---------- */
+
+#joystick {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  margin: -60px 0 0 -60px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  border: 3px solid rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+}
+
+#knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.2);
+}
+
+#hit-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(255, 30, 60, 0.75) 100%);
+}
+
+#floaters {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.floater {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 17px;
+  font-weight: 900;
+  white-space: nowrap;
+  text-shadow:
+    -1px -1px 0 #2a2f55,
+    1px -1px 0 #2a2f55,
+    -1px 1px 0 #2a2f55,
+    1px 1px 0 #2a2f55,
+    0 3px 0 rgba(0, 0, 0, 0.3);
+}
+
+.floater.gold {
+  color: #ffd84d;
+  font-size: 19px;
+}
+
+/* ---------- Écrans ---------- */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* "safe" : si le contenu dépasse, il part du haut et reste défilable au lieu d'être rogné. */
+  justify-content: safe center;
+  gap: 14px;
+  padding: 24px 16px;
+  text-align: center;
+  background: rgba(24, 28, 70, 0.6);
+  backdrop-filter: blur(3px);
+  overflow-y: auto;
+}
+
+h1,
+h2 {
+  font-size: clamp(32px, 8vw, 60px);
+  letter-spacing: 1px;
+  color: #ffe14d;
+  text-shadow:
+    0 4px 0 #e0762b,
+    0 8px 0 rgba(0, 0, 0, 0.25);
+}
+
+h2 {
+  font-size: clamp(26px, 6vw, 42px);
+}
+
+.hint {
+  font-size: 15px;
+  line-height: 1.5;
+  opacity: 0.92;
+}
+
+.stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.stats .reward {
+  color: #ffd84d;
+}
+
+.best {
+  font-size: 15px;
+  font-weight: 700;
+  color: #9ff0ff;
+  min-height: 1em;
+}
+
+.btn {
+  font-size: 22px;
+  font-weight: 800;
+  color: #fff;
+  padding: 12px 40px;
+  border: 4px solid #fff;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #5ee06a, #2fb84a);
+  box-shadow: 0 6px 0 #1d8a35;
+}
+
+.btn:active {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 #1d8a35;
+}
+
+.btn:disabled {
+  filter: grayscale(0.8);
+  opacity: 0.8;
+}
+
+.btn-alt {
+  background: linear-gradient(180deg, #6fb6ff, #3b82f6);
+  box-shadow: 0 6px 0 #2459b8;
+}
+
+.btn-alt:active {
+  box-shadow: 0 2px 0 #2459b8;
+}
+
+/* ---------- Menu principal : le héros reste visible au centre ---------- */
+
+.overlay.menu {
+  justify-content: space-between;
+  padding: calc(14px + env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom));
+  background: linear-gradient(
+    180deg,
+    rgba(24, 28, 70, 0.6) 0%,
+    rgba(24, 28, 70, 0) 30%,
+    rgba(24, 28, 70, 0) 55%,
+    rgba(24, 28, 70, 0.75) 100%
+  );
+  backdrop-filter: none;
+}
+
+.menu-top,
+.menu-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.menu-info,
+.menu-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+#characters {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  width: 100%;
+  max-width: 620px;
+}
+
+.char-card {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 6px;
+  border: 3px solid rgba(255, 255, 255, 0.55);
+  border-radius: 16px;
+  background: rgba(24, 28, 70, 0.72);
+  color: #fff;
+}
+
+.char-card.selected {
+  border-color: #ffe14d;
+  background: rgba(70, 60, 130, 0.9);
+}
+
+.char-card.locked {
+  opacity: 0.85;
+}
+
+.char-name {
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.char-desc {
+  font-size: 11.5px;
+  line-height: 1.3;
+  opacity: 0.9;
+}
+
+.char-status {
+  margin-top: auto;
+  font-size: 13px;
+  font-weight: 800;
+  color: #ffe14d;
+}
+
+/* ---------- Boutique ---------- */
+
+#shop-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 520px;
+}
+
+.shop-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
+  text-align: left;
+}
+
+.shop-icon {
+  font-size: 26px;
+  width: 34px;
+  text-align: center;
+}
+
+.shop-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.shop-name {
+  font-weight: 800;
+}
+
+.shop-level {
+  font-size: 12px;
+  font-weight: 800;
+  color: #9ff0ff;
+}
+
+.shop-desc {
+  display: block;
+  font-size: 12.5px;
+  opacity: 0.9;
+}
+
+.shop-buy {
+  min-width: 84px;
+  padding: 8px 10px;
+  border: 3px solid #fff;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffd84d, #f5a623);
+  box-shadow: 0 4px 0 #b97712;
+  color: #4a2f00;
+  font-weight: 800;
+}
+
+.shop-buy:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 #b97712;
+}
+
+.shop-buy:disabled {
+  filter: grayscale(0.9);
+  opacity: 0.6;
+}
+
+/* ---------- Cartes d'amélioration ---------- */
+
+#cards {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: 100%;
+  max-width: 760px;
+}
+
+.card {
+  color: #2a2f55;
+  flex: 1 1 200px;
+  max-width: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 12px;
+  border: 4px solid #fff;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #fffbe8, #ffe9a8);
+  box-shadow: 0 6px 0 #d9a73c;
+}
+
+.card:active {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 #d9a73c;
+}
+
+.card-icon {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.card-name {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.card-desc {
+  font-size: 14px;
+}
+
+.card-level {
+  font-size: 12px;
+  font-weight: 800;
+  color: #c2571a;
+}
+
+/* Portrait étroit : cartes en colonne, icône à gauche */
+@media (max-width: 560px) {
+  #cards {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .card {
+    flex: 0 0 auto;
+    max-width: none;
+    display: grid;
+    grid-template-columns: 52px 1fr;
+    column-gap: 12px;
+    text-align: left;
+    justify-items: start;
+    padding: 12px 14px;
+  }
+
+  .card-icon {
+    grid-row: 1 / span 3;
+    align-self: center;
+  }
+
+  .pill {
+    padding: 3px 8px;
+    font-size: 13px;
+  }
+
+  .btn {
+    padding: 12px 26px;
+  }
+}
+
+/* Écran peu haut (téléphone en paysage) : on compacte le menu */
+@media (max-height: 480px) {
+  .overlay {
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  h1 {
+    font-size: 30px;
+  }
+
+  .char-desc {
+    display: none;
+  }
+
+  .btn {
+    font-size: 18px;
+    padding: 8px 28px;
+  }
+}
