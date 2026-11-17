@@ -47,13 +47,21 @@ export interface ShopItem {
   desc: string;
   max: number;
   baseCost: number;
+  /** Multiplicateur de prix à chaque niveau (SHOP_GROWTH par défaut). */
+  growth?: number;
   apply(stats: Stats, level: number): void;
 }
 
+/**
+ * Courbe des prix de la boutique : le prix d'un niveau vaut baseCost × growth^niveau. Repères de réglage :
+ * un débutant gagne environ 1 000 pièces par partie, un bon joueur environ 10 000.
+ */
+export const SHOP_GROWTH = 1.6;
+
 /** Améliorations permanentes. Pour en ajouter une, ajouter une entrée à cette liste. */
 export const SHOP_ITEMS: ShopItem[] = [
-  { id: 'vitality', icon: '❤️', name: 'Vitalité', desc: '+10 PV max par niveau', max: 10, baseCost: 20, apply: (s, l) => (s.maxHp += 10 * l) },
-  { id: 'power', icon: '💥', name: 'Puissance', desc: '+6 % de dégâts par niveau', max: 10, baseCost: 25, apply: (s, l) => (s.damage *= 1 + 0.06 * l) },
+  { id: 'vitality', icon: '❤️', name: 'Vitalité', desc: '+10 PV max par niveau', max: 10, baseCost: 20, growth: 1.8, apply: (s, l) => (s.maxHp += 10 * l) },
+  { id: 'power', icon: '💥', name: 'Puissance', desc: '+6 % de dégâts par niveau', max: 10, baseCost: 25, growth: 1.8, apply: (s, l) => (s.damage *= 1 + 0.06 * l) },
   { id: 'haste', icon: '⚡', name: 'Célérité', desc: 'Armes 4 % plus rapides par niveau', max: 8, baseCost: 25, apply: (s, l) => (s.cooldown *= 0.96 ** l) },
   { id: 'swift', icon: '👟', name: 'Agilité', desc: '+3 % de vitesse par niveau', max: 5, baseCost: 30, apply: (s, l) => (s.speed *= 1 + 0.03 * l) },
   { id: 'magnet', icon: '🧲', name: 'Magnétisme', desc: '+12 % de portée de ramassage par niveau', max: 5, baseCost: 20, apply: (s, l) => (s.magnet *= 1 + 0.12 * l) },
@@ -73,8 +81,8 @@ export interface Character {
 
 export const CHARACTERS: Character[] = [
   { id: 'ombre', name: 'Ombre', desc: 'Le héros d’origine', model: 'hero-ombre.glb', cost: 0 },
-  { id: 'bolt', name: 'Bolt', desc: 'Robot bricoleur', model: 'hero-bolt.glb', cost: 150 },
-  { id: 'pip', name: 'Pip', desc: 'Mascotte bondissante', model: 'hero-pip.glb', cost: 400 },
+  { id: 'bolt', name: 'Bolt', desc: 'Robot bricoleur', model: 'hero-bolt.glb', cost: 1000 },
+  { id: 'pip', name: 'Pip', desc: 'Mascotte bondissante', model: 'hero-pip.glb', cost: 2500 },
 ];
 
 export interface Difficulty {
@@ -242,7 +250,7 @@ export function persistSave(storage: StorageLike | null, save: SaveData): void {
 
 /** Prix du prochain niveau d'une amélioration (arrondi à 5 pièces). */
 export function shopCost(item: ShopItem, level: number): number {
-  return Math.round((item.baseCost * 1.6 ** level) / 5) * 5;
+  return Math.round((item.baseCost * (item.growth ?? SHOP_GROWTH) ** level) / 5) * 5;
 }
 
 /** Achète un niveau d'amélioration. Renvoie false si c'est impossible (or insuffisant, maximum atteint). */

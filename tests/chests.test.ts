@@ -299,6 +299,37 @@ describe('Ouverture des coffres', () => {
 });
 
 describe('Affichage du contenu', () => {
+  it('annonce chaque contenu en gros sur la carte plein écran', () => {
+    expect(rewardView({ type: 'weapon', id: 'mines' }).label).toBe('Nouvelle arme secrète !');
+    expect(rewardView({ type: 'amulet', id: 'sage' }).label).toBe('Amulette');
+    expect(rewardView({ type: 'cosmetic', category: 'dust', id: 'ash' }).label).toBe('Nouvelle apparence');
+    expect(rewardView({ type: 'coins', amount: 300 }).label).toBe('Pièces');
+    expect(rewardView({ type: 'coins', amount: 7000 }).label).toBe('Jackpot !');
+  });
+
+  it('donne le montant des pièces pour le faire défiler, et seulement pour elles', () => {
+    expect(rewardView({ type: 'coins', amount: 450 }).amount).toBe(450);
+    expect(rewardView({ type: 'weapon', id: 'mines' }).amount).toBeUndefined();
+    expect(rewardView({ type: 'amulet', id: 'sage' }).amount).toBeUndefined();
+  });
+
+  it('a un libellé, un titre et un sous-titre pour tout ce que les coffres peuvent donner', () => {
+    const rewards = [
+      { type: 'weapon', id: 'mines' },
+      ...AMULETS.map((a) => ({ type: 'amulet', id: a.id })),
+      ...lootableCosmetics().map((c) => ({ type: 'cosmetic', category: c.category, id: c.id })),
+      { type: 'coins', amount: 200 },
+      { type: 'coins', amount: 10000 },
+    ] as Parameters<typeof rewardView>[0][];
+    for (const reward of rewards) {
+      const view = rewardView(reward);
+      expect(view.label.length, JSON.stringify(reward)).toBeGreaterThan(0);
+      expect(view.title.length, JSON.stringify(reward)).toBeGreaterThan(0);
+      expect(view.subtitle.length, JSON.stringify(reward)).toBeGreaterThan(0);
+      expect(['common', 'rare', 'legendary']).toContain(view.tier);
+    }
+  });
+
   it('décrit chaque type de contenu', () => {
     expect(rewardView({ type: 'weapon', id: 'mines' })).toMatchObject({ title: 'Mines', tier: 'legendary' });
     expect(rewardView({ type: 'amulet', id: 'sage' })).toMatchObject({ title: 'Œil de sage', tier: 'rare' });

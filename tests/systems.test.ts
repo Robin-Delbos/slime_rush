@@ -19,7 +19,7 @@ import { Pickups } from '../src/pickups';
 import { Player, baseStats } from '../src/player';
 import { resetRandom, seedRandom } from '../src/rng';
 import { Effects } from '../src/effects';
-import { Weapons } from '../src/weapons';
+import { MINE_SPACING, Weapons } from '../src/weapons';
 import { WEAPONS, weaponDef } from '../src/weaponData';
 import { ARENA } from '../src/world';
 import { STILL, enemyType, makeArena, placeEnemy } from './helpers';
@@ -655,6 +655,8 @@ describe('Weapons', () => {
   describe('Mines', () => {
     const minesSetup = () => {
       const s = setup('mines');
+      // Les mines ne se posent qu'en marchant : le héros est « en marche » (sa position, elle, ne change que si le test la déplace).
+      s.player.moving = true;
       const blasts: { x: number; z: number; radius: number }[] = [];
       s.weapons.onBlast = (x, z, radius) => blasts.push({ x, z, radius });
       return { ...s, blasts };
@@ -667,6 +669,71 @@ describe('Weapons', () => {
       placeEnemy(s.enemies, 6, 0, enemyType('orc'));
       s.weapons.update(STEP, 0, s.player, s.enemies);
       expect(s.weapons.mineCount).toBe(1);
+    });
+
+    const minePositions = (w: Weapons) => (w as unknown as { mines: { x: number; z: number }[] }).mines;
+
+    it('ne pose aucune mine quand le héros reste sur place', () => {
+      const s = minesSetup();
+      s.player.moving = false;
+      placeEnemy(s.enemies, 3, 0, enemyType('orc'));
+      advance(s.weapons, s, 6);
+      expect(s.weapons.mineCount).toBe(0);
+      expect(s.blasts).toHaveLength(0);
+    });
+
+    it('ne remplit pas le terrain en piétinant : sans avancer, une seule pose', () => {
+      const s = minesSetup();
+      for (let i = 0; i < 5; i++) s.weapons.levelUp('mines');
+      placeEnemy(s.enemies, 8, 0, enemyType('orc'));
+      // « En marche » mais sans changer de place : une seule pose de trois mines, puis plus rien.
+      advance(s.weapons, s, 6);
+      expect(s.weapons.mineCount).toBe(weaponDef('mines')!.levels[5].count);
+    });
+
+    it('sème en marchant : une pose à chaque délai, sur le chemin parcouru', () => {
+      const s = minesSetup();
+      for (let t = 0; t < 4; t++) placeEnemy(s.enemies, t * 12, 9, enemyType('orc')).hp = 1e9;
+      let time = 0;
+      for (let i = 0; i < 600; i++) {
+        // 6 unités par seconde le long de l'axe X, pendant 6 secondes.
+        s.player.group.position.x += 6 * STEP;
+        time += STEP;
+        s.weapons.update(STEP, time, s.player, s.enemies);
+      }
+      // Une pose toutes les 1,6 s : aux instants 0, 1,6, 3,2 et 4,8.
+      expect(s.weapons.mineCount).toBe(4);
+      const xs = minePositions(s.weapons).map((m) => m.x).sort((a, b) => a - b);
+      for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBeGreaterThan(MINE_SPACING);
+    });
+
+    it('arrête de semer dès que le héros s’arrête', () => {
+      const s = minesSetup();
+      placeEnemy(s.enemies, 6, 9, enemyType('orc')).hp = 1e9;
+      let time = 0;
+      const walk = (seconds: number, moving: boolean) => {
+        s.player.moving = moving;
+        for (let t = 0; t < seconds; t += STEP) {
+          if (moving) s.player.group.position.x += 6 * STEP;
+          time += STEP;
+          s.weapons.update(STEP, time, s.player, s.enemies);
+        }
+      };
+      walk(2, true);
+      const placed = s.weapons.mineCount;
+      expect(placed).toBeGreaterThanOrEqual(2);
+      walk(5, false);
+      expect(s.weapons.mineCount).toBe(placed);
+    });
+
+    it('pose les mines derrière le héros, dans le sens contraire à sa marche', () => {
+      const s = minesSetup();
+      // Le héros regarde vers +X (sens de la marche) : les mines sont posées à sa gauche sur l'axe, donc à x négatif.
+      s.player.group.rotation.y = Math.PI / 2;
+      placeEnemy(s.enemies, 8, 0, enemyType('orc')).hp = 1e9;
+      s.weapons.update(STEP, 0, s.player, s.enemies);
+      expect(s.weapons.mineCount).toBe(1);
+      expect(minePositions(s.weapons)[0].x).toBeLessThan(0);
     });
 
     it('pose plus de mines à chaque pose aux niveaux suivants', () => {

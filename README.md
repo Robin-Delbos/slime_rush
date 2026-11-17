@@ -70,9 +70,9 @@ On choisit **une** arme au menu et on la garde pendant toute la partie. Chaque a
 | Arme | Style | Prix de déblocage |
 |---|---|---|
 | Carabine | Tire sur l'ennemi le plus proche : projectiles multiples, perforation | gratuite |
-| 🔮 Gardiens | Des orbes tournent autour de vous : défense, orbite plus large | 120 🪙 |
-| 🔥 Aura ardente | Pulsations de dégâts et de recul autour de vous : combat rapproché | 200 🪙 |
-| 🔱 Lance | Transperce toute une ligne d'ennemis : gros dégâts, recharge lente | 300 🪙 |
+| 🔮 Gardiens | Des orbes tournent autour de vous : défense, orbite plus large | 400 🪙 |
+| 🔥 Aura ardente | Pulsations de dégâts et de recul autour de vous : combat rapproché | 1 200 🪙 |
+| 🔱 Lance | Transperce toute une ligne d'ennemis : gros dégâts, recharge lente | 3 000 🪙 |
 
 Les bonus passifs, communs à toutes les armes, sont : Force, Bottes, Cœur, Régénération, Aimant.
 
@@ -100,11 +100,11 @@ Un boss arrive toutes les **2 minutes**, avec **un boss de plus à chaque vague*
 
 ## Coffres et collection
 
-Au menu, **🎁 Coffres** permet d'ouvrir un coffre pour **1000 pièces**, ou **trois coffres pour 2500 pièces**. Chaque coffre contient, au hasard :
+Au menu, **🎁 Coffres** permet d'ouvrir un coffre pour **1000 pièces**, ou **trois coffres pour 2500 pièces**. L'ouverture se fait en **plein écran** : le coffre tombe et tremble (un toucher l'ouvre tout de suite), éclate dans la lumière, puis révèle une grande carte annoncée selon sa rareté, avec confettis, sons et vibration. Plusieurs coffres s'enchaînent d'un toucher jusqu'à un récapitulatif, et le bouton « Encore » permet d'en ouvrir d'autres sans quitter l'écran. Chaque coffre contient, au hasard :
 
 | Contenu | Chance | Détail |
 |---|---|---|
-| Arme exclusive aux coffres | ~1 % | Introuvable en boutique ; elle est un peu plus forte que les autres armes. Apparaît au menu une fois trouvée. |
+| Arme exclusive aux coffres | ~1 % | Introuvable en boutique ; elle est un peu plus forte que les autres armes. Elle sème des mines **en marchant** (rester sur place n'en pose pas). Apparaît au menu une fois trouvée. |
 | Amulette | ~38 % | Effet pour **une seule partie** : elle est consommée au lancement. Chaque exemplaire en plus la renforce (jusqu'à 3 utilisés d'un coup). |
 | Apparence | ~32 % | Couleur des projectiles, traînée derrière eux, poussière sous les pas. Jamais deux fois la même. |
 | Pièces | ~29 % | De 200 à 10 000 pièces, les petits montants étant les plus fréquents. |
@@ -115,8 +115,9 @@ Au menu, **🎁 Coffres** permet d'ouvrir un coffre pour **1000 pièces**, ou **
 
 - **Or** : pièces ramassées + 1 pièce par tranche de 10 secondes de survie, multipliées selon la difficulté, versées à la fin de la partie.
 - **Armes** : à débloquer avec de l'or (voir ci-dessus).
-- **Boutique** (menu principal) : sept améliorations permanentes à plusieurs niveaux.
-- **Apparences** (dans la boutique) : Ombre (gratuit, le héros d'origine), Bolt (150 pièces), Pip (400 pièces). Elles changent l'aspect du héros, sans effet sur le jeu.
+- **Boutique** (menu principal) : sept améliorations permanentes à plusieurs niveaux. Le prix d'un niveau monte de 60 % à chaque niveau (80 % pour Vitalité et Puissance, qui coûtent près de 4 000 à 5 000 pièces au dernier niveau) : environ 24 000 pièces pour tout acheter.
+- **Repères d'économie** : un débutant gagne environ 1 000 pièces par partie, un bon joueur environ 10 000. Les prix sont réglés pour que la boutique prenne une vingtaine de parties à un débutant et deux ou trois à un bon joueur, et que les coffres (1 000 pièces) soient le grand puits à pièces de la fin de jeu.
+- **Apparences** (dans la boutique) : Ombre (gratuit, le héros d'origine), Bolt (1 000 pièces), Pip (2 500 pièces). Elles changent l'aspect du héros, sans effet sur le jeu.
 
 La sauvegarde est stockée dans le navigateur (`localStorage`). Elle est donc propre à chaque navigateur et à chaque appareil, et disparaît si les données du site sont effacées.
 

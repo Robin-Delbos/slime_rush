@@ -207,16 +207,16 @@ async function scenario(page, url, viewport) {
   await page.click('#btn-shop');
   check(await page.visible('#overlay-shop'), 'la boutique s’ouvre');
   check(await page.eval(`[...document.querySelectorAll('.shop-buy')].every((b) => b.disabled)`), 'sans or, tous les achats sont désactivés');
-  await page.eval('window.__game.addGold(500)');
+  await page.eval('window.__game.addGold(3000)');
   await page.click('.shop-buy[data-id="vitality"]');
-  check(goldOf(await page.text('#shop-gold')) === 480, 'un achat débite son prix');
+  check(goldOf(await page.text('#shop-gold')) === 2980, 'un achat débite son prix');
   check((await page.text('.shop-row .shop-level')).trim() === '1 / 10', 'le niveau de l’amélioration augmente');
   await shot('2-boutique');
 
   // --- Apparences (dans la boutique) ---
   await page.click('.char-card[data-id="bolt"]');
   check((await page.game()).selected === 'bolt', 'une apparence abordable est achetée et sélectionnée');
-  check(goldOf(await page.text('#shop-gold')) === 330, 'l’achat de l’apparence débite son prix');
+  check(goldOf(await page.text('#shop-gold')) === 1980, 'l’achat de l’apparence débite son prix');
   await page.click('#btn-shop-back');
   check(!(await page.visible('#overlay-shop')), 'la boutique se ferme');
 
@@ -224,7 +224,7 @@ async function scenario(page, url, viewport) {
   await page.eval('window.__game.addGold(500)');
   await page.click('.weapon-card[data-id="aura"]');
   check((await page.game()).weapon === 'aura', 'une arme abordable est achetée et sélectionnée');
-  check(goldOf(await page.text('#menu-gold')) === 630, 'l’achat de l’arme débite son prix');
+  check(goldOf(await page.text('#menu-gold')) === 1280, 'l’achat de l’arme débite son prix');
   await page.click('.diff-btn[data-id="hard"]');
   check((await page.game()).difficulty === 'hard', 'la difficulté se change');
   await sleep(400);
@@ -319,7 +319,7 @@ async function scenario(page, url, viewport) {
   await page.waitFor('l’écran de fin', gameOverShown, 1000);
   const end = await page.game();
   check(end.state === 'gameover', 'la mort du héros termine la partie');
-  check(end.gold > 630, `la partie rapporte de l’or (${end.gold - 630} pièces)`);
+  check(end.gold > 1280, `la partie rapporte de l’or (${end.gold - 1280} pièces)`);
   check((await page.text('#gameover-stats')).includes('×0.6'), 'le bilan indique le multiplicateur d’or de la difficulté');
   check((await page.text('#best-gameover')).includes('record'), 'le premier temps est un record');
   await shot('6-fin');
@@ -392,7 +392,7 @@ async function scenario(page, url, viewport) {
   check(kept.gold === quit.gold && kept.selected === 'bolt' && kept.weapon === 'aura', 'la sauvegarde importée est conservée après rechargement');
 
   // --- Chaque arme à l'écran : rendu sans erreur, arme visible, ennemis touchés ---
-  await page.eval('window.__game.addGold(1000)');
+  await page.eval('window.__game.addGold(5000)');
   for (const weapon of ['rifle', 'orbs', 'aura', 'spear']) {
     await page.click(`.weapon-card[data-id="${weapon}"]`);
     check((await page.game()).weapon === weapon, `arme choisie : ${weapon}`);
@@ -562,33 +562,68 @@ async function orientationScenario(page, url, device) {
   await page.tapElement('#btn-chests');
   check(await page.visible('#overlay-chests'), 'l’écran des coffres s’ouvre au doigt');
   await checkReachable(page, 'coffres : les deux offres, la collection et le retour sont atteignables', ['#btn-chest-1', '#btn-chest-3', '#btn-open-collection', '#btn-chests-back']);
+  const openWhole = `!document.querySelector('#overlay-reveal').classList.contains('hidden')`;
+  const phase = (name) => `document.querySelector('#overlay-reveal').dataset.phase === '${name}'`;
+  // Tout doit tenir dans l'écran SANS défiler (le plein écran ne défile pas) : on ne fait donc aucun scrollIntoView ici.
+  // Renvoie la liste des éléments qui dépassent de l'écran (vide si tout tient).
+  const overflowing = (selectors) =>
+    page.eval(`${JSON.stringify(selectors)}.flatMap((sel) => { const found = [...document.querySelectorAll(sel)]; if (found.length === 0) return [sel + ' : absent']; return found.filter((el) => { const r = el.getBoundingClientRect(); return !(r.left >= -1 && r.right <= innerWidth + 1 && r.top >= -1 && r.bottom <= innerHeight + 1); }).map((el) => { const r = el.getBoundingClientRect(); return sel + ' [' + [r.left, r.top, r.right, r.bottom].map(Math.round).join(',') + '] dans ' + innerWidth + '×' + innerHeight; }); })`);
+  const fits = async (selectors, label) => {
+    // On laisse finir les animations d'arrivée, qui dépassent un instant (rebond).
+    await sleep(900);
+    const bad = await overflowing(selectors);
+    check(bad.length === 0, `${label}${bad.length ? ' :\n    ' + bad.join('\n    ') : ''}`);
+  };
+  // Idem pour le toucher : les boutons doivent être dans l'écran et rien ne doit les recouvrir, sans défilement (qui fausserait la mesure).
+  const touchable = (selectors) =>
+    page.eval(`${JSON.stringify(selectors)}.every((sel) => { const el = document.querySelector(sel); if (!el) return false; const r = el.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return r.left >= -1 && r.right <= innerWidth + 1 && r.top >= -1 && r.bottom <= innerHeight + 1 && (top === el || el.contains(top)); })`);
+  const actionsShown = `!document.querySelector('#reveal-actions').classList.contains('hidden')`;
+  const screenSize = await page.eval('({ w: innerWidth, h: innerHeight })');
   // Dés truqués : 0,001 est le tirage de l'arme secrète.
   await page.eval('window.__game.chestRandom([0.001, 0.5])');
   await page.tapElement('#btn-chest-1');
-  // L'animation : le coffre tombe et tremble, puis s'ouvre dans la lumière.
-  await sleep(900);
-  check(await page.eval(`!!document.querySelector('.chest-slot.rumble')`), 'le coffre tremble avant de s’ouvrir');
-  await shot('2a1-coffre-tremble');
+  await page.waitFor('l’ouverture en plein écran', openWhole, 3000);
+  check(await page.eval(`!!document.querySelector('#overlay-reveal .reveal-chest')`), 'le coffre apparaît en plein écran');
   await sleep(550);
-  await shot('2a2-coffre-ouvert');
-  await page.waitFor('le contenu du coffre', `document.querySelectorAll('#chest-stage .reward-card').length === 1`, 5000);
-  check((await page.text('#chest-stage')).includes('Mines'), 'le coffre contient l’arme secrète');
+  check(await page.eval(phase('tension')), 'le coffre tremble avant de s’ouvrir');
+  await shot('2a1-coffre-tension');
+  await page.waitFor('la carte du contenu', `!!document.querySelector('#overlay-reveal .reveal-card')`, 5000);
+  await sleep(350);
+  await shot('2a2-carte-plein-ecran');
+  const card = await page.text('#overlay-reveal .reveal-card');
+  check(card.includes('Mines') && card.includes('Nouvelle arme secrète'), 'la carte annonce l’arme secrète');
+  await fits(['#overlay-reveal .reveal-card'], 'la carte tient entièrement dans l’écran');
+  await page.waitFor('les boutons de fin', actionsShown, 4000);
+  check(await touchable(['#reveal-again', '#reveal-close']), 'plein écran : « Encore » et « Terminer » sont dans l’écran et touchables');
+  await fits(['#overlay-reveal .reveal-card', '#reveal-again', '#reveal-close'], 'coffre unique : la carte et les boutons tiennent dans l’écran sans défiler');
   check((await page.game()).savedWeapons.includes('mines') && (await page.game()).gold === 5000, 'l’arme est débloquée et le coffre coûte 1000 pièces');
-  await shot('2b-coffre-arme');
-  // Trois coffres d'amulettes pour 2500 pièces.
-  await page.waitFor('les boutons de coffre actifs', `!document.querySelector('#btn-chest-1').disabled && !document.querySelector('#btn-chest-3').disabled`, 5000);
+  check(/1000/.test(await page.text('#reveal-again')), 'le bouton « Encore » indique le prix');
+  await shot('2b-fin-coffre');
+  // « Encore » ouvre directement un autre coffre : ici une apparence.
+  await page.eval('window.__game.chestRandom([0.5, 0])');
+  await page.tapElement('#reveal-again');
+  await page.waitFor('la seconde carte', `!!document.querySelector('#overlay-reveal .reveal-card')`, 6000);
+  check((await page.text('#overlay-reveal .reveal-card')).includes('Écarlate'), 'l’apparence trouvée s’annonce en plein écran');
+  await page.waitFor('les boutons de fin', actionsShown, 4000);
+  check((await page.game()).cosmetics.projectile.includes('crimson'), 'une apparence est trouvée');
+  await page.tapElement('#reveal-close');
+  check(!(await page.eval(openWhole)), '« Terminer » referme le plein écran');
+  // Trois coffres d'amulettes pour 2500 pièces : trois cartes à passer au toucher, puis le récapitulatif.
   await page.eval('window.__game.chestRandom([0.2, 0])');
   await page.tapElement('#btn-chest-3');
-  await page.waitFor('les trois coffres', `document.querySelectorAll('#chest-stage .reward-card').length === 3`, 5000);
-  check((await page.game()).gold === 2500 && (await page.game()).amulets.sage === 3, 'trois coffres coûtent 2500 pièces et donnent trois amulettes');
-  await checkReachable(page, 'coffres : les trois cartes de contenu sont atteignables', ['#chest-stage .chest-slot:nth-child(1) .reward-card', '#chest-stage .chest-slot:nth-child(3) .reward-card']);
-  await shot('2c-coffres-amulettes');
-  // Une apparence.
-  await page.waitFor('les boutons de coffre actifs', `!document.querySelector('#btn-chest-1').disabled && !document.querySelector('#btn-chest-3').disabled`, 5000);
-  await page.eval('window.__game.chestRandom([0.5, 0])');
-  await page.tapElement('#btn-chest-1');
-  await page.waitFor('le coffre d’apparence', `document.querySelectorAll('#chest-stage .reward-card').length === 1`, 5000);
-  check((await page.game()).cosmetics.projectile.includes('crimson'), 'une apparence est trouvée');
+  for (let i = 1; i <= 3; i++) {
+    await page.waitFor(`la carte ${i} sur 3`, phase('card-ready'), 8000);
+    check((await page.text('#reveal-count')) === `${i} / 3`, `le compteur indique ${i} / 3`);
+    if (i === 1) await shot('2c1-carte-1-sur-3');
+    await page.tap(Math.round(screenSize.w / 2), Math.round(screenSize.h * 0.35));
+  }
+  await page.waitFor('le récapitulatif', `${phase('end')} && document.querySelectorAll('.reveal-mini').length === 3`, 5000);
+  check((await page.game()).gold === 1500 && (await page.game()).amulets.sage === 3, 'trois coffres coûtent 2500 pièces et donnent trois amulettes');
+  check(await touchable(['#reveal-again', '#reveal-close']), 'récapitulatif : les boutons sont dans l’écran et touchables');
+  await fits(['.reveal-recap-title', '.reveal-mini', '#reveal-again', '#reveal-close'], 'récapitulatif : le titre, les trois contenus et les boutons tiennent dans l’écran sans défiler');
+  await shot('2c2-recapitulatif');
+  await page.tapElement('#reveal-close');
+  check(!(await page.eval(openWhole)), 'le plein écran se referme après le récapitulatif');
   // Plus assez de pièces : les offres sont grisées.
   await page.eval('window.__game.addGold(-1400)');
   check((await page.eval(`document.querySelector('#btn-chest-1').disabled && document.querySelector('#btn-chest-3').disabled`)), 'sans assez de pièces, les offres sont grisées');
@@ -712,7 +747,13 @@ async function orientationScenario(page, url, device) {
   await page.tapElement('#btn-start');
   await page.waitFor('la partie avec les Mines', 'window.__game.state().state === "playing"', 5000);
   await page.eval('window.__game.spawn(8, 5)');
-  await page.waitFor('des ennemis tués par les mines', 'window.__game.state().kills > 0', 20000);
+  // Les mines se sèment en marchant : on fait aller et venir le héros au doigt jusqu'à ce qu'elles aient tué.
+  const view = await page.eval('({ w: innerWidth, h: innerHeight })');
+  const walkFrom = { x: Math.round(view.w * 0.22), y: Math.round(view.h * 0.7) };
+  for (let i = 0; i < 14 && (await page.game()).kills === 0; i++) {
+    await page.drag(walkFrom, { x: walkFrom.x + (i % 2 === 0 ? 90 : -90), y: walkFrom.y }, 700);
+  }
+  check((await page.game()).kills > 0, 'les mines, semées en marchant, tuent des ennemis');
   await shot('12-mines');
   check(JSON.stringify((await page.game()).weapons) === '["mines"]', 'la partie ne contient que les Mines');
   await page.click('#overlay-levelup:not(.hidden) .card');

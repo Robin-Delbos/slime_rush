@@ -120,14 +120,15 @@ export class Game {
       onOpenChests: (count) => {
         const rewards = openChests(this.save, count, this.chestRandom, this.chestPrices());
         this.sfx.unlock();
-        this.sfx.play(rewards ? 'chest' : 'deny');
+        if (!rewards) this.sfx.play('deny');
         if (rewards) this.commit();
         return rewards;
       },
       chestPrices: () => this.chestPrices(),
-      onChestReveal: (tier) => {
+      onChestSound: (sound) => {
         // Plus le contenu est rare, plus le son est triomphal.
-        this.sfx.play(tier === 'legendary' ? 'legend' : tier === 'rare' ? 'levelup' : 'coin');
+        const names = { rumble: 'rumble', boom: 'boom', common: 'coin', rare: 'levelup', legendary: 'legend', next: 'click', recap: 'ready' } as const;
+        this.sfx.play(names[sound]);
       },
       onEquipAmulet: (id, level) => {
         this.sfx.play('click');

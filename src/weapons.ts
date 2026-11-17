@@ -39,6 +39,10 @@ const MINE_LIFE = 9;
 const MINE_TRIGGER = 1.3;
 const MINE_RADIUS = 0.32;
 const MAX_MINES = 40;
+/** Distance à parcourir entre deux poses : on sème un chemin de mines, pas un tas. */
+export const MINE_SPACING = 1.8;
+/** Les mines sont posées derrière le héros, pas sous ses pieds. */
+const MINE_BEHIND = 0.9;
 const MINE_IDLE = new THREE.Color(0x6b7280);
 const MINE_ARMED = new THREE.Color(0xff4d3a);
 const MINE_BLINK = new THREE.Color(0x2a2f45);
@@ -83,6 +87,8 @@ export class Weapons {
   private orbMesh: THREE.InstancedMesh;
   private haloMesh: THREE.InstancedMesh;
   private mines: Mine[] = [];
+  /** Où la dernière pose a eu lieu (null : pas encore de pose). */
+  private lastMineDrop: { x: number; z: number } | null = null;
   private mineMesh: THREE.InstancedMesh;
   private tint = new THREE.Color();
   /** Traînée lumineuse derrière chaque projectile. */
@@ -178,6 +184,7 @@ export class Weapons {
     this.timers.clear();
     this.shots.length = 0;
     this.mines.length = 0;
+    this.lastMineDrop = null;
     this.mineMesh.count = 0;
     this.ringAge = 1;
     this.shotMesh.count = this.spearMesh.count = this.orbMesh.count = this.haloMesh.count = this.trailMesh.count = 0;
@@ -343,12 +350,21 @@ export class Weapons {
       const timer = (this.timers.get('mines') ?? 0) - dt;
       this.timers.set('mines', timer);
       if (timer <= 0) {
-        if (enemies.nearest(player.x, player.z, RANGE + 4)) {
+        // On sème en marchant : rester sur place, ou piétiner, ne pose pas de nouvelles mines. Il faut avoir
+        // parcouru assez de chemin depuis la dernière pose, et des ennemis doivent rôder.
+        const last = this.lastMineDrop;
+        const travelled = !last || Math.hypot(player.x - last.x, player.z - last.z) >= MINE_SPACING;
+        if (player.moving && travelled && enemies.nearest(player.x, player.z, RANGE + 4)) {
+          // Derrière le héros, dans le sens contraire à sa marche.
+          const backX = player.x - Math.sin(player.group.rotation.y) * MINE_BEHIND;
+          const backZ = player.z - Math.cos(player.group.rotation.y) * MINE_BEHIND;
           for (let i = 0; i < w.count && this.mines.length < MAX_MINES; i++) {
-            this.mines.push({ x: player.x + rand(-0.9, 0.9), z: player.z + rand(-0.9, 0.9), age: 0, damage: player.stats.damage * w.damage, area: w.area });
+            this.mines.push({ x: backX + rand(-0.6, 0.6), z: backZ + rand(-0.6, 0.6), age: 0, damage: player.stats.damage * w.damage, area: w.area });
           }
+          this.lastMineDrop = { x: player.x, z: player.z };
           this.timers.set('mines', w.interval * player.stats.cooldown);
         } else {
+          // Prête à poser dès que les conditions sont réunies.
           this.timers.set('mines', 0);
         }
       }

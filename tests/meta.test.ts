@@ -15,6 +15,7 @@ import {
   importSave,
   loadSave,
   persistSave,
+  SHOP_GROWTH,
   runReward,
   selectedDifficulty,
   selectedWeapon,
@@ -22,6 +23,7 @@ import {
   startingStats,
   type StorageLike,
 } from '../src/meta';
+import { CHEST_PRICE } from '../src/chests';
 import { baseStats } from '../src/player';
 import { WEAPONS } from '../src/weaponData';
 
@@ -281,6 +283,72 @@ describe('Boutique', () => {
     const stats = startingStats(save);
     expect(stats.maxHp).toBe(base.maxHp + 30);
     expect(stats.cooldown).toBeLessThan(base.cooldown);
+  });
+});
+
+describe('Équilibre des prix', () => {
+  // Repères du joueur : un débutant gagne environ 1 000 pièces par partie, un bon joueur environ 10 000.
+  const BEGINNER = 1000;
+  const GOOD = 10000;
+  const item = (id: string) => SHOP_ITEMS.find((i) => i.id === id)!;
+  const totalCost = (it: (typeof SHOP_ITEMS)[number]) => Array.from({ length: it.max }, (_, level) => shopCost(it, level)).reduce((a, b) => a + b, 0);
+  const shopTotal = SHOP_ITEMS.reduce((sum, it) => sum + totalCost(it), 0);
+
+  it('garde les mêmes prix pour le premier niveau de chaque amélioration', () => {
+    const first = Object.fromEntries(SHOP_ITEMS.map((i) => [i.id, shopCost(i, 0)]));
+    expect(first).toEqual({ vitality: 20, power: 25, haste: 25, swift: 30, magnet: 20, greed: 40, wisdom: 40 });
+  });
+
+  it('monte plus vite pour Vitalité et Puissance (×1,8 par niveau) que pour les autres (×1,6)', () => {
+    expect(SHOP_GROWTH).toBe(1.6);
+    expect(item('vitality').growth).toBe(1.8);
+    expect(item('power').growth).toBe(1.8);
+    for (const id of ['haste', 'swift', 'magnet', 'greed', 'wisdom']) expect(item(id).growth, id).toBeUndefined();
+    expect(shopCost(item('vitality'), 9)).toBe(3965);
+    expect(shopCost(item('power'), 9)).toBe(4960);
+    expect(shopCost(item('magnet'), 4)).toBe(130);
+  });
+
+  it('coûte environ 24 000 pièces au total : quelques parties d’un bon joueur, une vingtaine d’un débutant', () => {
+    expect(shopTotal).toBeGreaterThan(23000);
+    expect(shopTotal).toBeLessThan(25000);
+    expect(shopTotal / GOOD).toBeGreaterThan(2);
+    expect(shopTotal / GOOD).toBeLessThan(3);
+    expect(shopTotal / BEGINNER).toBeGreaterThan(15);
+    expect(shopTotal / BEGINNER).toBeLessThan(35);
+  });
+
+  it('laisse un débutant acheter les premiers niveaux dès sa première partie', () => {
+    const early = SHOP_ITEMS.reduce((sum, it) => sum + shopCost(it, 0) + shopCost(it, 1), 0);
+    expect(early).toBeLessThan(BEGINNER);
+  });
+
+  it('étage le prix des armes : la première en une partie de débutant, la dernière en quelques-unes', () => {
+    const paid = WEAPONS.filter((w) => w.cost > 0 && !w.chest).sort((a, b) => a.cost - b.cost);
+    expect(paid.map((w) => [w.id, w.cost])).toEqual([
+      ['orbs', 400],
+      ['aura', 1200],
+      ['spear', 3000],
+    ]);
+    expect(paid[0].cost).toBeLessThanOrEqual(BEGINNER);
+    expect(paid[paid.length - 1].cost).toBeLessThanOrEqual(BEGINNER * 4);
+    expect(paid[paid.length - 1].cost).toBeLessThan(GOOD);
+  });
+
+  it('fait payer les apparences comme des puits à pièces', () => {
+    expect(CHARACTERS.map((c) => [c.id, c.cost])).toEqual([
+      ['ombre', 0],
+      ['bolt', 1000],
+      ['pip', 2500],
+    ]);
+  });
+
+  it('garde les coffres comme grand puits de fin de jeu : un par partie pour un débutant, une dizaine pour un bon joueur', () => {
+    expect(CHEST_PRICE).toBe(1000);
+    expect(GOOD / CHEST_PRICE).toBeGreaterThanOrEqual(10);
+    expect(BEGINNER / CHEST_PRICE).toBe(1);
+    // Aucun achat unique de la boutique ne dépasse ce qu'un bon joueur gagne en une partie.
+    for (const it of SHOP_ITEMS) for (let level = 0; level < it.max; level++) expect(shopCost(it, level), `${it.id} niv ${level + 1}`).toBeLessThan(GOOD);
   });
 });
 

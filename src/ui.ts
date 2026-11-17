@@ -2,6 +2,7 @@ import { CHARACTERS, DIFFICULTIES, SHOP_ITEMS, exportSave, hasLegend, importSave
 import { AMULETS, AMULET_MAX_LEVEL, amuletOf } from './amulets';
 import { countUp } from './anim';
 import { CHEST_BUNDLE, rewardView, type ChestPrices, type ChestReward } from './chests';
+import { REVEAL_TIMING, RevealFlow } from './reveal';
 import { CATEGORIES, CATEGORY_LABELS, COSMETICS, type CosmeticCategory } from './cosmetics';
 import { WEAPON_PREFIX } from './upgrades';
 import { VERSION_LABEL } from './version';
@@ -68,8 +69,8 @@ export interface UiHandlers {
   onSelectCosmetic(category: CosmeticCategory, id: string): void;
   /** Prix actuels des coffres (ceux du jeu, ou ceux du mode dev). */
   chestPrices(): ChestPrices;
-  /** Un coffre vient de s'ouvrir sur un contenu de cette rareté (pour le son). */
-  onChestReveal(tier: 'common' | 'rare' | 'legendary'): void;
+  /** Un son de l'ouverture des coffres (tension, éclat, rareté du contenu, suite, récapitulatif). */
+  onChestSound(sound: 'rumble' | 'boom' | 'common' | 'rare' | 'legendary' | 'next' | 'recap'): void;
   onBuy(id: string): void;
   onToggleSound(): void;
   /** Remplacement de la progression par une sauvegarde importée, déjà validée. */
@@ -121,7 +122,10 @@ export class Ui {
   private saveScreen = el('overlay-save');
   private chestScreen = el('overlay-chests');
   private collection = el('overlay-collection');
-  private chestStage = el('chest-stage');
+  private reveal = el('overlay-reveal');
+  private revealStage = el('reveal-stage');
+  private revealFlow: RevealFlow | null = null;
+  private revealRewards: ChestReward[] = [];
   /** Délais de l'animation d'ouverture en cours (annulés si on quitte l'écran). */
   private chestTimers: number[] = [];
   private saveCode = el<HTMLTextAreaElement>('save-code');
@@ -434,7 +438,6 @@ private refreshChests(): void {
       screen.classList.remove('hidden');
     };
     el('btn-chests').addEventListener('click', () => {
-      this.chestStage.replaceChildren();
       el('chest-status').textContent = '';
       open(this.chestScreen);
     });
@@ -450,10 +453,17 @@ private refreshChests(): void {
       this.collection.classList.add('hidden');
     });
     el('btn-chest-1').addEventListener('click', () => this.openChests(1));
+    // Plein écran : un toucher ouvre le coffre qui tremble, ou passe à la carte suivante.
+    this.reveal.addEventListener('click', (event) => {
+      if ((event.target as HTMLElement).closest('button')) return;
+      this.tapReveal();
+    });
+    el('reveal-again').addEventListener('click', () => this.openChests(this.revealRewards.length === CHEST_BUNDLE.count ? CHEST_BUNDLE.count : 1));
+    el('reveal-close').addEventListener('click', () => this.closeReveal());
     el('btn-chest-3').addEventListener('click', () => this.openChests(CHEST_BUNDLE.count));
   }
 
-  private clearChestTimers(): void {
+private clearChestTimers(): void {
     for (const timer of this.chestTimers) window.clearTimeout(timer);
     this.chestTimers = [];
   }
@@ -462,104 +472,226 @@ private refreshChests(): void {
     this.chestTimers.push(window.setTimeout(action, ms));
   }
 
-  /** Gerbe d'étincelles qui jaillit d'un coffre : plus il y en a, plus le contenu est rare. */
-  private sparks(slot: HTMLElement, tier: 'common' | 'rare' | 'legendary'): void {
-    const palette = tier === 'legendary' ? ['#ffd84d', '#ffffff', '#ff9a3d', '#fff27a'] : tier === 'rare' ? ['#d8b8ff', '#ffffff', '#a97bff'] : ['#c9d7f5', '#ffffff', '#8fb0ff'];
-    const count = tier === 'legendary' ? 34 : tier === 'rare' ? 20 : 12;
+  private vibrate(pattern: number[]): void {
+    navigator.vibrate?.(pattern);
+  }
+
+  /** Confettis qui tombent sur tout l'écran (plus il y en a, plus le contenu est rare). */
+  private confetti(tier: 'common' | 'rare' | 'legendary'): void {
+    const fx = el('reveal-fx');
+    const palette = tier === 'legendary' ? ['#ffd84d', '#ffffff', '#ff9a3d', '#fff27a', '#ff7ad9'] : tier === 'rare' ? ['#d8b8ff', '#ffffff', '#a97bff', '#6fe9ff'] : ['#c9d7f5', '#ffffff', '#8fb0ff'];
+    const count = tier === 'legendary' ? 80 : tier === 'rare' ? 45 : 22;
+    for (let i = 0; i < count; i++) {
+      const piece = make('span', 'confetti');
+      piece.style.setProperty('--x', `${Math.random() * 100}%`);
+      piece.style.setProperty('--c', palette[i % palette.length]);
+      piece.style.setProperty('--d', `${1.6 + Math.random() * 1.8}s`);
+      piece.style.setProperty('--delay', `${Math.random() * 0.5}s`);
+      fx.append(piece);
+      this.later(3800, () => piece.remove());
+    }
+  }
+
+  /** Étincelles qui jaillissent du centre de l'écran au moment de l'éclat. */
+  private burstSparks(tier: 'common' | 'rare' | 'legendary'): void {
+    const fx = el('reveal-fx');
+    const palette = tier === 'legendary' ? ['#ffd84d', '#ffffff', '#ff9a3d'] : tier === 'rare' ? ['#d8b8ff', '#ffffff'] : ['#c9d7f5', '#ffffff'];
+    const count = tier === 'legendary' ? 46 : tier === 'rare' ? 30 : 18;
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const distance = 70 + Math.random() * 90;
-      const spark = make('span', 'spark');
+      const distance = 120 + Math.random() * 220;
+      const spark = make('span', 'reveal-spark');
       spark.style.setProperty('--dx', `${Math.cos(angle) * distance}px`);
-      spark.style.setProperty('--dy', `${Math.sin(angle) * distance - 40}px`);
+      spark.style.setProperty('--dy', `${Math.sin(angle) * distance}px`);
       spark.style.setProperty('--c', palette[i % palette.length]);
-      spark.style.setProperty('--delay', `${Math.random() * 90}ms`);
-      slot.append(spark);
+      fx.append(spark);
       this.later(1100, () => spark.remove());
     }
   }
 
-  /** Un coffre prêt à s'ouvrir, avec le contenu qu'il révélera. */
-  private chestSlot(reward: ChestReward, index: number): { slot: HTMLElement; open: (animated: boolean) => void } {
-    const view = rewardView(reward);
-    const slot = make('div', `chest-slot drop ${view.tier}`);
-    slot.style.setProperty('--i', String(index));
-    const rays = make('div', 'chest-rays');
-    const chest = make('div', 'chest');
-    chest.innerHTML = CHEST_ART;
-    slot.append(rays, chest);
-
-    const showCard = () => {
-      chest.remove();
-      rays.remove();
-      const card = make('div', `reward-card ${view.tier}`);
-      // Pour une amulette, on précise le stock après ce tirage.
-      const stock = reward.type === 'amulet' ? ` · ${this.save.amulets[reward.id] ?? 1} en stock` : '';
-      card.append(iconElement('reward-icon', view.icon), make('span', 'reward-title', view.title), make('span', 'reward-sub', view.subtitle + stock));
-      slot.append(card);
-    };
-
-    const open = (animated: boolean) => {
-      if (!animated) {
-        showCard();
-        return;
-      }
-      slot.classList.remove('rumble');
-      slot.classList.add('open');
-      this.sparks(slot, view.tier);
-      this.handlers.onChestReveal(view.tier);
-      navigator.vibrate?.(view.tier === 'legendary' ? [60, 40, 140, 40, 220] : [40]);
-      if (view.tier === 'legendary') {
-        // Contenu exceptionnel : éclair doré sur tout l'écran et l'écran qui tremble.
-        const flash = el('chest-flash');
-        flash.classList.remove('go');
-        void flash.offsetWidth;
-        flash.classList.add('go');
-        this.chestScreen.classList.add('quake');
-        this.later(520, () => this.chestScreen.classList.remove('quake'));
-      }
-      this.later(360, showCard);
-    };
-    return { slot, open };
+  private setRevealPhase(): void {
+    this.reveal.dataset.phase = this.revealFlow?.phase ?? 'tension';
   }
 
   /**
-   * Ouvre des coffres : ils tombent, tremblent de plus en plus, puis s'ouvrent l'un après l'autre
-   * dans un jaillissement de lumière et d'étincelles qui révèle leur contenu.
+   * Lance l'ouverture plein écran des coffres tirés : pour chacun, tension, éclat, grande carte du contenu ;
+   * puis, après plusieurs coffres, un récapitulatif, et l'envie d'en ouvrir d'autres.
    */
+  private startReveal(rewards: ChestReward[]): void {
+    this.clearChestTimers();
+    el('reveal-fx').replaceChildren();
+    this.revealRewards = rewards;
+    this.revealFlow = new RevealFlow(rewards.length);
+    this.reveal.classList.remove('hidden');
+    el('reveal-actions').classList.add('hidden');
+    this.showRevealChest();
+  }
+
+  /** Le coffre tombe et tremble de plus en plus, avec un grondement. */
+  private showRevealChest(): void {
+    const flow = this.revealFlow!;
+    this.setRevealPhase();
+    delete this.reveal.dataset.tier;
+    el('reveal-count').textContent = flow.counter;
+    el('reveal-hint').textContent = 'Touchez pour ouvrir';
+    const chest = make('div', 'reveal-chest tension');
+    chest.innerHTML = CHEST_ART;
+    this.revealStage.replaceChildren(chest);
+    this.handlers.onChestSound('rumble');
+    this.vibrate([30, 60, 30]);
+    this.later(REVEAL_TIMING.tension, () => this.burstReveal());
+  }
+
+  /** L'éclat : le couvercle saute, flash et secousse d'écran, puis la carte arrive. */
+  private burstReveal(): void {
+    const flow = this.revealFlow;
+    if (!flow || !flow.openNow()) return;
+    this.setRevealPhase();
+    const reward = this.revealRewards[flow.index];
+    const view = rewardView(reward);
+    const chest = this.revealStage.querySelector('.reveal-chest');
+    chest?.classList.remove('tension');
+    chest?.classList.add('open');
+    el('reveal-hint').textContent = '';
+    const flash = el('reveal-flash');
+    flash.className = view.tier === 'legendary' ? 'go gold' : 'go';
+    this.reveal.classList.add('quake');
+    this.later(520, () => this.reveal.classList.remove('quake'));
+    this.burstSparks(view.tier);
+    this.handlers.onChestSound('boom');
+    this.vibrate(view.tier === 'legendary' ? [80, 40, 160, 40, 240] : [70]);
+    this.later(REVEAL_TIMING.burst, () => this.showRevealCard());
+  }
+
+  /** La grande carte du contenu, avec son annonce, ses rayons et ses confettis. */
+  private showRevealCard(): void {
+    const flow = this.revealFlow;
+    if (!flow || !flow.showCard()) return;
+    this.setRevealPhase();
+    const reward = this.revealRewards[flow.index];
+    const view = rewardView(reward);
+    this.reveal.dataset.tier = view.tier;
+
+    const card = make('div', `reveal-card ${view.tier}`);
+    const title = make('span', 'reveal-title', view.title);
+    // Pour des pièces, le montant défile de 0 à sa valeur.
+    if (view.amount !== undefined) this.countCoins(title, view.amount);
+    card.append(make('span', 'reveal-tier-label', view.label), iconElement('reveal-icon', view.icon), title, make('span', 'reveal-sub', view.subtitle));
+    if (reward.type === 'amulet') card.append(make('span', 'reveal-stock', `${this.save.amulets[reward.id] ?? 1} en stock`));
+    this.revealStage.replaceChildren(card);
+
+    this.handlers.onChestSound(view.tier);
+    this.confetti(view.tier);
+    this.vibrate(view.tier === 'common' ? [40] : [50, 30, 90]);
+    this.later(REVEAL_TIMING.admire, () => this.readyReveal());
+  }
+
+  /** Fait défiler le montant d'un trésor de 0 à sa valeur. */
+  private countCoins(node: HTMLElement, amount: number): void {
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      node.textContent = `${amount} pièces`;
+      return;
+    }
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = (now - start) / 900;
+      node.textContent = `${countUp(0, amount, t)} pièces`;
+      if (t < 1 && node.isConnected) requestAnimationFrame(tick);
+    };
+    node.textContent = '0 pièces';
+    requestAnimationFrame(tick);
+  }
+
+  /** On peut maintenant passer la carte (ou, pour un coffre unique, les boutons de fin apparaissent). */
+  private readyReveal(): void {
+    const flow = this.revealFlow;
+    if (!flow || !flow.makeReady()) return;
+    this.setRevealPhase();
+    if (flow.phase === 'end') {
+      el('reveal-hint').textContent = '';
+      this.showRevealActions();
+    } else {
+      el('reveal-hint').textContent = 'Touchez pour continuer';
+    }
+  }
+
+  /** Un toucher sur le plein écran : ouvre le coffre qui tremble, ou passe à la suite. */
+  private tapReveal(): void {
+    const flow = this.revealFlow;
+    if (!flow) return;
+    if (flow.phase === 'tension') {
+      this.burstReveal();
+      return;
+    }
+    const next = flow.advance();
+    if (next === 'chest') {
+      this.handlers.onChestSound('next');
+      el('reveal-flash').className = '';
+      this.showRevealChest();
+    } else if (next === 'recap') {
+      this.showRecap();
+    }
+  }
+
+  /** Récapitulatif après plusieurs coffres : tout le butin d'un coup d'œil. */
+  private showRecap(): void {
+    const flow = this.revealFlow!;
+    flow.finish();
+    this.setRevealPhase();
+    delete this.reveal.dataset.tier;
+    el('reveal-count').textContent = '';
+    el('reveal-hint').textContent = '';
+    const recap = make('div', 'reveal-recap');
+    recap.append(make('h2', 'reveal-recap-title', 'Butin'));
+    const grid = make('div', 'reveal-grid');
+    for (const reward of this.revealRewards) {
+      const view = rewardView(reward);
+      const mini = make('div', `reveal-mini ${view.tier}`);
+      mini.append(iconElement('reveal-mini-icon', view.icon), make('span', 'reveal-mini-title', view.title), make('span', 'reveal-mini-sub', view.label));
+      grid.append(mini);
+    }
+    recap.append(grid);
+    this.revealStage.replaceChildren(recap);
+    this.handlers.onChestSound('recap');
+    this.confetti('rare');
+    this.showRevealActions();
+  }
+
+  /** Boutons de fin : en ouvrir d'autres (avec le prix), ou terminer. */
+  private showRevealActions(): void {
+    const again = el<HTMLButtonElement>('reveal-again');
+    const prices = this.handlers.chestPrices();
+    const bundle = this.revealRewards.length === CHEST_BUNDLE.count;
+    const price = bundle ? prices.bundle : prices.single;
+    again.textContent = `🎁 Encore ${bundle ? CHEST_BUNDLE.count + ' coffres' : 'un coffre'} · ${price} 🪙`;
+    again.disabled = this.save.gold < price;
+    el('reveal-actions').classList.remove('hidden');
+  }
+
+  private closeReveal(): void {
+    this.clearChestTimers();
+    el('reveal-fx').replaceChildren();
+    this.revealFlow = null;
+    this.reveal.classList.add('hidden');
+    this.revealStage.replaceChildren();
+    this.refresh();
+  }
+
+  /** Ouvre des coffres : débite, tire le contenu, puis lance l'ouverture plein écran. */
   private openChests(count: number): void {
     const rewards = this.handlers.onOpenChests(count);
     const status = el('chest-status');
-    this.clearChestTimers();
     if (!rewards) {
-      this.chestStage.replaceChildren();
       status.textContent = 'Pas assez de pièces.';
       status.classList.add('error');
+      // Le plein écran peut être ouvert (bouton « Encore ») : on le ferme pour montrer le message.
+      if (!this.reveal.classList.contains('hidden')) this.closeReveal();
       return;
     }
     status.classList.remove('error');
     status.textContent = '';
-    const chests = rewards.map((reward, i) => this.chestSlot(reward, i));
-    this.chestStage.replaceChildren(...chests.map((c) => c.slot));
-    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    if (reduced) {
-      for (const chest of chests) chest.open(false);
-      this.refresh();
-      return;
-    }
-    // Pendant l'animation, les boutons sont inactifs (leur état normal revient à la fin).
-    for (const id of ['btn-chest-1', 'btn-chest-3']) el<HTMLButtonElement>(id).disabled = true;
-    const RUMBLE_AT = 450;
-    const FIRST_OPEN = 1250;
-    const STEP = 650;
-    this.later(RUMBLE_AT, () => {
-      for (const chest of chests) {
-        chest.slot.classList.remove('drop');
-        chest.slot.classList.add('rumble');
-      }
-    });
-    chests.forEach((chest, i) => this.later(FIRST_OPEN + i * STEP, () => chest.open(true)));
-    this.later(FIRST_OPEN + (chests.length - 1) * STEP + 700, () => this.refresh());
+    this.startReveal(rewards);
   }
 
   showMenu(): void {

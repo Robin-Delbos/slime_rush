@@ -162,7 +162,6 @@
       </div>
 
       <div id="overlay-chests" class="overlay hidden">
-        <div id="chest-flash"></div>
         <h2>Coffres</h2>
         <p class="hint">Amulettes, apparences, pièces… et peut-être une arme secrète</p>
         <span id="chest-gold" class="pill">🪙 0</span>
@@ -171,7 +170,6 @@
           <button id="btn-chest-3" class="btn btn-small btn-alt">🎁 3 coffres · 2500 🪙</button>
         </div>
         <p id="chest-status" class="best" role="status"></p>
-        <div id="chest-stage"></div>
         <div class="menu-actions">
           <button id="btn-open-collection" class="btn btn-small btn-alt">Ma collection</button>
           <button id="btn-chests-back" class="btn btn-small">Retour</button>
@@ -183,6 +181,19 @@
         <p class="hint">Choisissez l'amulette de la prochaine partie et vos apparences</p>
         <div id="collection-body"></div>
         <button id="btn-collection-back" class="btn btn-alt">Retour</button>
+      </div>
+
+      <div id="overlay-reveal" class="hidden" data-phase="tension">
+        <div class="reveal-rays"></div>
+        <div id="reveal-fx"></div>
+        <div id="reveal-flash"></div>
+        <div id="reveal-count"></div>
+        <div id="reveal-stage"></div>
+        <p id="reveal-hint"></p>
+        <div id="reveal-actions" class="hidden">
+          <button id="reveal-again" class="btn">🎁 Encore</button>
+          <button id="reveal-close" class="btn btn-alt">Terminer</button>
+        </div>
       </div>
 
       <div id="overlay-levelup" class="overlay hidden">

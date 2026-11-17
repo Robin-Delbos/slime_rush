@@ -118,22 +118,32 @@ export function openChests(save: SaveData, count: number, rng: Rng, prices: Ches
   return rewards;
 }
 
-/** Texte et pictogramme d'un contenu, pour l'affichage. */
-export function rewardView(reward: ChestReward): { icon: string; title: string; subtitle: string; tier: 'legendary' | 'rare' | 'common' } {
+/** Texte et pictogramme d'un contenu, pour l'affichage. `label` est l'annonce en gros sur la carte plein écran. */
+export function rewardView(reward: ChestReward): {
+  icon: string;
+  title: string;
+  subtitle: string;
+  label: string;
+  tier: 'legendary' | 'rare' | 'common';
+  /** Pour des pièces : le montant, que l'écran fait défiler de 0 jusqu'à lui. */
+  amount?: number;
+} {
   switch (reward.type) {
     case 'weapon': {
       const w = weaponDef(reward.id);
-      return { icon: w?.icon ?? '🎁', title: w?.name ?? reward.id, subtitle: 'Nouvelle arme secrète !', tier: 'legendary' };
+      return { icon: w?.icon ?? '🎁', title: w?.name ?? reward.id, subtitle: 'Arme exclusive aux coffres', label: 'Nouvelle arme secrète !', tier: 'legendary' };
     }
     case 'amulet': {
       const a = amuletOf(reward.id);
-      return { icon: a?.icon ?? '🧿', title: a?.name ?? reward.id, subtitle: `Amulette · ${a?.describe(1) ?? ''}`, tier: 'rare' };
+      return { icon: a?.icon ?? '🧿', title: a?.name ?? reward.id, subtitle: `${a?.describe(1) ?? ''} · une seule partie`, label: 'Amulette', tier: 'rare' };
     }
     case 'cosmetic': {
       const c = cosmeticOf(reward.category, reward.id);
-      return { icon: '🎨', title: c?.name ?? reward.id, subtitle: `Apparence · ${CATEGORY_LABELS[reward.category]}`, tier: 'rare' };
+      return { icon: '🎨', title: c?.name ?? reward.id, subtitle: CATEGORY_LABELS[reward.category], label: 'Nouvelle apparence', tier: 'rare' };
     }
-    case 'coins':
-      return { icon: '🪙', title: `${reward.amount} pièces`, subtitle: 'Un petit trésor', tier: reward.amount >= 3000 ? 'legendary' : 'common' };
+    case 'coins': {
+      const jackpot = reward.amount >= 3000;
+      return { icon: '🪙', title: `${reward.amount} pièces`, subtitle: jackpot ? 'Un énorme trésor !' : 'Un petit trésor', label: jackpot ? 'Jackpot !' : 'Pièces', tier: jackpot ? 'legendary' : 'common', amount: reward.amount };
+    }
   }
 }

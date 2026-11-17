@@ -110,7 +110,7 @@ export const WEAPONS: WeaponDef[] = [
     icon: ORBS_ICON,
     name: 'Gardiens',
     desc: 'Des orbes tournent autour de vous',
-    cost: 120,
+    cost: 400,
     levels: [
       lv('Des orbes tournent autour de vous', 0.8, 0.4, 2, 0, 2.4),
       lv('+1 orbe', 0.8, 0.4, 3, 0, 2.4),
@@ -125,7 +125,7 @@ export const WEAPONS: WeaponDef[] = [
     icon: '🔥',
     name: 'Aura ardente',
     desc: 'Brûle tout ce qui s’approche',
-    cost: 200,
+    cost: 1200,
     levels: [
       lv('Brûle tout ce qui s’approche', 0.7, 0.9, 1, 0, 3),
       lv('+20 % de rayon', 0.7, 0.9, 1, 0, 3.6),
@@ -140,7 +140,7 @@ export const WEAPONS: WeaponDef[] = [
     icon: '🔱',
     name: 'Lance',
     desc: 'Transperce toute une ligne d’ennemis',
-    cost: 300,
+    cost: 3000,
     levels: [
       lv('Transperce toute une ligne d’ennemis', 2.4, 1.3, 1, 99, 0.5),
       lv('+30 % de dégâts', 3.1, 1.3, 1, 99, 0.5),
@@ -156,11 +156,11 @@ export const WEAPONS: WeaponDef[] = [
     id: 'mines',
     icon: MINES_ICON,
     name: 'Mines',
-    desc: 'Sème des pièges qui explosent au passage des ennemis',
+    desc: 'Sème des pièges en marchant : ils explosent au passage des ennemis',
     cost: 0,
     chest: true,
     levels: [
-      lv('Sème des pièges qui explosent au passage des ennemis', 3.4, 1.6, 1, 0, 2.6),
+      lv('Sème des mines en marchant : elles explosent au passage des ennemis', 3.4, 1.6, 1, 0, 2.6),
       lv('+1 mine à chaque pose', 3.4, 1.6, 2, 0, 2.6),
       lv('+25 % de dégâts', 4.25, 1.6, 2, 0, 2.6),
       lv('Explosions plus larges', 4.25, 1.6, 2, 0, 3.4),
