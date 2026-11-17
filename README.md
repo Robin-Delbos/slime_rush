@@ -127,6 +127,8 @@ Pour la transporter ailleurs, le bouton 💾 du menu ouvre l'écran **Sauvegarde
 
 La version du jeu (`0.x.y`) est écrite à un seul endroit, le champ `version` de `package.json`, et s'affiche en petit sous les boutons du menu (« v0.2.0 », avec « (dev) » en plus sous `npm run dev`). Elle est augmentée à chaque commit qui change le jeu : `feat` → version mineure (0.2.0 → 0.3.0), `fix` → correctif (0.2.0 → 0.2.1), rien pour la documentation, les tests ou la CI. Commande : `npm version minor --no-git-tag-version` (ou `patch`).
 
+Chaque nouvelle version reçoit aussi un tag `vX.Y.Z` et une release GitHub (notes = message du commit), créés automatiquement par `.github/workflows/release.yml` au push sur `main`.
+
 ## Mode dev
 
 Avec `npm run dev` uniquement (il n'existe pas dans la version publiée), un bouton **🛠 Dev** apparaît en haut à gauche du menu pour gagner du temps pendant les tests :

@@ -35,10 +35,21 @@ La version du jeu est un numéro `0.x.y` affiché en petit sous les boutons du m
 2. Augmenter sans créer de tag ni de commit : `npm version minor --no-git-tag-version` (ou `patch`). Cela met à jour `package.json` **et** `package-lock.json` ; les deux fichiers font partie du commit.
 3. Faire cela **avant** le lancement des tests complets, pour que les tests et la compilation portent déjà la nouvelle version.
 4. Le message de commit n'a pas besoin d'une ligne dédiée, mais si la version change, ajouter dans le corps une ligne « Version : 0.x.y ».
-5. Dans le compte rendu à l'utilisateur, **annoncer la version** (ancienne → nouvelle) ou dire qu'elle n'a pas changé, et pourquoi.
+5. Après le push, **vérifier que le tag et la release existent** (voir ci-dessous) et le dire dans le compte rendu.
+6. Dans le compte rendu à l'utilisateur, **annoncer la version** (ancienne → nouvelle) ou dire qu'elle n'a pas changé, et pourquoi.
+
+## Tag et release
+
+Chaque nouvelle version a un tag `vX.Y.Z` et une release GitHub « Slime Rush X.Y.Z », rattachés au commit qui a changé la version (demandé par l'utilisateur, durablement : pas besoin de redemander).
+
+- **C'est le workflow `.github/workflows/release.yml` qui les crée**, au push sur `main` : si `package.json` porte une version sans release, il crée le tag et la release sur le commit qui a changé la ligne `version`, avec le message de ce commit comme notes (sans la ligne `Co-Authored-By`). Aucune action manuelle, aucun jeton à manipuler : le poste de l'utilisateur n'a pas `gh`, et il ne faut pas extraire ses identifiants Git pour appeler l'API.
+- **Ne pas créer le tag à la main avant le push** : le workflow le ferait échouer ou l'ignorerait. Et ne pas pousser de tag sans release.
+- Donc **pour une version, le message du commit compte** : ses notes deviennent celles de la release. Titre clair, corps en puces sur ce qui change pour le joueur (voir `commit-fr`).
+- **Vérification après le push** (dépôt public, sans identifiant) : attendre une trentaine de secondes puis `curl -s https://api.github.com/repos/Robin-Delbos/slime_rush/releases/latest` ; le `tag_name` doit être `vX.Y.Z` et `target_commitish`/le tag pointer sur le bon commit. S'il n'y est pas, regarder `https://api.github.com/repos/Robin-Delbos/slime_rush/actions/runs?per_page=3` (statut du workflow « Release de la version ») et le dire à l'utilisateur plutôt que de contourner.
+- Un commit sans changement de version (docs, tests, ci...) ne crée ni tag ni release.
 
 ## Ne pas faire
 
 - Ne pas écrire le numéro à la main dans `index.html`, le code ou le README (le README décrit la règle, sans le numéro en cours).
-- Ne pas créer de tag Git ni de release GitHub sans demande de l'utilisateur.
+- Ne pas créer ni supprimer de tag ou de release à la main, ni réécrire un tag existant (déplacer un tag publié casse les liens des testeurs).
 - Ne pas augmenter la version pour un commit qui ne touche que la documentation, les tests ou la CI.

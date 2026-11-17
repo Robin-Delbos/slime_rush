@@ -1,0 +1,39 @@
+name: Release de la version
+
+# À chaque publication sur main, si la version de package.json n'a pas encore de release,
+# GitHub crée le tag « vX.Y.Z » et la release, rattachés au commit qui a changé la version.
+# Une publication qui ne change pas la version (docs, tests, ci...) ne fait rien.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Créer le tag et la release si la version est nouvelle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag="v${version}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "La release $tag existe déjà : rien à faire."
+            exit 0
+          fi
+          # Dernier commit qui a modifié la ligne « version » de package.json.
+          commit=$(git log -1 --format=%H -G'^  "version":' -- package.json)
+          echo "Release $tag sur le commit $commit"
+          git log -1 --format=%B "$commit" | grep -v '^Co-Authored-By:' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > notes.md
+          gh release create "$tag" --target "$commit" --title "Slime Rush ${version}" --notes-file notes.md
