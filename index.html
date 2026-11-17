@@ -46,6 +46,7 @@
             <span id="menu-gold" class="pill">🪙 0</span>
             <span id="best-start" class="pill">🏆 --:--</span>
             <button id="btn-sound" class="pill pill-btn" aria-label="Activer ou couper le son">🔊</button>
+            <button id="btn-save" class="pill pill-btn" aria-label="Exporter ou importer la sauvegarde">💾</button>
           </div>
         </div>
         <div class="menu-bottom">
@@ -63,6 +64,39 @@
         <span id="shop-gold" class="pill">🪙 0</span>
         <div id="shop-items"></div>
         <button id="btn-shop-back" class="btn btn-alt">Retour</button>
+      </div>
+
+      <div id="overlay-save" class="overlay hidden">
+        <h2>Sauvegarde</h2>
+        <p class="hint">
+          Pour changer de navigateur ou d'appareil : exportez ici, puis importez le code ou le fichier de l'autre côté.
+        </p>
+        <div class="save-box">
+          <h3>Exporter</h3>
+          <div class="menu-actions">
+            <button id="btn-export-copy" class="btn btn-small">Copier le code</button>
+            <button id="btn-export-file" class="btn btn-small btn-alt">Télécharger le fichier</button>
+          </div>
+        </div>
+        <div class="save-box">
+          <h3>Importer</h3>
+          <textarea
+            id="save-code"
+            rows="3"
+            spellcheck="false"
+            autocomplete="off"
+            autocapitalize="off"
+            placeholder="Collez ici un code de sauvegarde"
+            aria-label="Code de sauvegarde"
+          ></textarea>
+          <div class="menu-actions">
+            <button id="btn-import-file" class="btn btn-small btn-alt">Choisir un fichier</button>
+            <button id="btn-import" class="btn btn-small">Importer</button>
+          </div>
+          <input id="save-file" type="file" accept=".txt,text/plain" hidden />
+        </div>
+        <p id="save-status" class="best" role="status"></p>
+        <button id="btn-save-back" class="btn btn-alt">Retour</button>
       </div>
 
       <div id="overlay-levelup" class="overlay hidden">

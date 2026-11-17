@@ -6,6 +6,8 @@ import {
   buyShopItem,
   chooseCharacter,
   defaultSave,
+  exportSave,
+  importSave,
   loadSave,
   persistSave,
   runReward,
@@ -75,6 +77,66 @@ describe('Sauvegarde', () => {
       },
     };
     expect(() => persistSave(storage, defaultSave())).not.toThrow();
+  });
+});
+
+describe('Export et import de la sauvegarde', () => {
+  function richSave() {
+    const save = defaultSave();
+    save.gold = 321;
+    save.bestTime = 95;
+    save.shop = { vitality: 3, greed: 1 };
+    save.unlocked = ['pip', 'bolt'];
+    save.selected = 'bolt';
+    return save;
+  }
+
+  it('restitue à l’import exactement ce qui a été exporté', () => {
+    const save = richSave();
+    expect(importSave(exportSave(save))).toEqual(save);
+    expect(importSave(exportSave(defaultSave()))).toEqual(defaultSave());
+  });
+
+  it('produit un code d’une seule ligne, sans espace', () => {
+    expect(exportSave(richSave())).toMatch(/^SLIMERUSH1:[A-Za-z0-9+/=]+$/);
+  });
+
+  it('tolère les espaces et retours à la ligne ajoutés par un copier-coller', () => {
+    const save = richSave();
+    const code = exportSave(save);
+    const mangled = `  ${code.slice(0, 20)}\n${code.slice(20, 45)} ${code.slice(45)}\r\n`;
+    expect(importSave(mangled)).toEqual(save);
+  });
+
+  it('refuse tout ce qui n’est pas un code de sauvegarde', () => {
+    const code = exportSave(richSave());
+    expect(importSave('')).toBeNull();
+    expect(importSave('bonjour')).toBeNull();
+    expect(importSave(JSON.stringify(richSave()))).toBeNull();
+    // Sans l'en-tête, code tronqué, contenu qui n'est pas un objet.
+    expect(importSave(code.slice('SLIMERUSH1:'.length))).toBeNull();
+    expect(importSave(code.slice(0, 30))).toBeNull();
+    expect(importSave('SLIMERUSH1:!!!')).toBeNull();
+    expect(importSave(`SLIMERUSH1:${btoa('null')}`)).toBeNull();
+    expect(importSave(`SLIMERUSH1:${btoa('[1,2]')}`)).toBeNull();
+    expect(importSave(`SLIMERUSH1:${btoa('42')}`)).toBeNull();
+  });
+
+  it('nettoie un code modifié à la main', () => {
+    const forged = `SLIMERUSH1:${btoa(JSON.stringify({ gold: -5, shop: { vitality: 999 }, unlocked: ['pirate'], selected: 'ombre' }))}`;
+    const save = importSave(forged)!;
+    expect(save.gold).toBe(0);
+    expect(save.shop.vitality).toBe(SHOP_ITEMS.find((i) => i.id === 'vitality')!.max);
+    expect(save.unlocked).toEqual(['pip']);
+    expect(save.selected).toBe('pip');
+  });
+
+  it('ne modifie pas la sauvegarde exportée et renvoie une copie indépendante', () => {
+    const save = richSave();
+    const copy = importSave(exportSave(save))!;
+    copy.shop.vitality = 9;
+    copy.unlocked.push('ombre');
+    expect(save).toEqual(richSave());
   });
 });
 

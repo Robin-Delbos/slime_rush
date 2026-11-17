@@ -71,6 +71,8 @@ Le décor (herbe, cailloux, arbres) reste dans les verts et les gris : tout ce q
 
 La sauvegarde est stockée dans le navigateur (`localStorage`). Elle est donc propre à chaque navigateur et à chaque appareil, et disparaît si les données du site sont effacées.
 
+Pour la transporter ailleurs, le bouton 💾 du menu ouvre l'écran **Sauvegarde** : *Exporter* donne un code à copier ou un fichier à télécharger, *Importer* le relit (collé ou choisi comme fichier) et remplace la progression après confirmation. Le réglage du son reste celui de l'appareil.
+
 ## Tests
 
 | Commande | Rôle | Durée |

@@ -91,6 +91,13 @@ export class Game {
         this.sfx.play('click');
         this.commit();
       },
+      onImportSave: (data) => {
+        // Le réglage du son appartient à cet appareil : il n'est pas remplacé par celui de la sauvegarde importée.
+        Object.assign(this.save, data, { muted: this.save.muted });
+        this.sfx.play('buy');
+        this.commit();
+        this.applyCharacter();
+      },
     });
 
     this.input.onPause = () => this.togglePause();

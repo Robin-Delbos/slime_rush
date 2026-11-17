@@ -31,6 +31,8 @@ export class Input {
     private knob: HTMLElement,
   ) {
     window.addEventListener('keydown', (e) => {
+      // La saisie dans un champ de texte (code de sauvegarde) ne pilote pas le jeu.
+      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
       this.keys.add(e.code);
       if (e.code === 'Space' && !e.repeat) {
         e.preventDefault();

@@ -238,6 +238,51 @@ async function scenario(page, url, viewport) {
   const reloaded = await page.game();
   check(reloaded.gold === quit.gold && reloaded.selected === 'bolt', 'la progression est conservée après rechargement');
 
+  // --- Export puis import de la sauvegarde dans un navigateur "neuf" ---
+  const typeCode = (code) =>
+    page.eval(`(() => { const t = document.querySelector('#save-code'); t.value = ${JSON.stringify(code)}; t.dispatchEvent(new Event('input')); })()`);
+  await page.click('#btn-save');
+  check(await page.visible('#overlay-save'), 'l’écran de sauvegarde s’ouvre');
+  await page.click('#btn-export-copy');
+  await sleep(300);
+  const code = await page.eval(`document.querySelector('#save-code').value`);
+  check(/^SLIMERUSH1:\S+$/.test(code), 'l’export affiche un code de sauvegarde');
+  check((await page.text('#save-status')).length > 0, 'l’export confirme la copie ou invite à copier à la main');
+  await shot('7-sauvegarde-export');
+
+  await page.eval('localStorage.clear()');
+  await page.send('Page.navigate', { url: `${url}?debug` });
+  await page.waitFor('le rechargement', `!!window.__game && !document.querySelector('#btn-start').disabled`);
+  check((await page.game()).gold === 0 && (await page.game()).selected === 'pip', 'sans sauvegarde, la progression repart de zéro');
+
+  await page.click('#btn-save');
+  await page.click('#btn-import');
+  check(await page.eval(`document.querySelector('#save-status').classList.contains('error')`), 'importer sans code affiche une erreur');
+  await typeCode('ceci n’est pas un code');
+  await page.click('#btn-import');
+  check(await page.eval(`document.querySelector('#save-status').classList.contains('error')`), 'un code invalide est refusé');
+  check((await page.game()).gold === 0, 'un code invalide ne modifie pas la progression');
+
+  await typeCode(code);
+  await page.click('#btn-import');
+  check((await page.text('#btn-import')) === 'Confirmer', 'un code valide demande une confirmation');
+  check((await page.game()).gold === 0, 'rien n’est remplacé avant la confirmation');
+  await shot('8-sauvegarde-import');
+  await page.click('#btn-import');
+  const imported = await page.game();
+  check(imported.gold === quit.gold && imported.selected === 'bolt', 'la confirmation restaure l’or et le personnage');
+  await page.click('#btn-save-back');
+  check(!(await page.visible('#overlay-save')), 'l’écran de sauvegarde se ferme');
+  check(goldOf(await page.text('#menu-gold')) === quit.gold, 'le menu affiche l’or importé');
+  await page.click('#btn-shop');
+  check((await page.text('.shop-row .shop-level')).trim() === '1 / 10', 'les améliorations de la boutique sont restaurées');
+  await page.click('#btn-shop-back');
+
+  await page.send('Page.navigate', { url: `${url}?debug` });
+  await page.waitFor('le rechargement', `!!window.__game && !document.querySelector('#btn-start').disabled`);
+  const kept = await page.game();
+  check(kept.gold === quit.gold && kept.selected === 'bolt', 'la sauvegarde importée est conservée après rechargement');
+
   check(page.problems.length === 0, `aucune erreur ni avertissement dans la console${page.problems.length ? ' :\n' + page.problems.join('\n') : ''}`);
 }
 

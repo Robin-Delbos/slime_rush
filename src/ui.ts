@@ -1,4 +1,4 @@
-import { CHARACTERS, SHOP_ITEMS, shopCost, type SaveData } from './meta';
+import { CHARACTERS, SHOP_ITEMS, exportSave, importSave, shopCost, type SaveData } from './meta';
 import type { Upgrade } from './upgrades';
 
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -28,6 +28,8 @@ export interface UiHandlers {
   onSelectCharacter(id: string): void;
   onBuy(id: string): void;
   onToggleSound(): void;
+  /** Remplacement de la progression par une sauvegarde importée, déjà validée. */
+  onImportSave(data: SaveData): void;
   onPause(): void;
   onResume(): void;
   /** Abandon de la partie en cours depuis le menu de pause. */
@@ -62,6 +64,12 @@ export class Ui {
   private pause = el('overlay-pause');
   private gameOver = el('overlay-gameover');
   private playButton = el<HTMLButtonElement>('btn-start');
+  private saveScreen = el('overlay-save');
+  private saveCode = el<HTMLTextAreaElement>('save-code');
+  private saveStatus = el('save-status');
+  private importButton = el<HTMLButtonElement>('btn-import');
+  /** Sauvegarde lue dans le champ, en attente de confirmation avant d'écraser la progression. */
+  private pendingImport: SaveData | null = null;
 
   constructor(
     private save: SaveData,
@@ -82,7 +90,113 @@ export class Ui {
       handlers.onNavigate();
       this.shop.classList.add('hidden');
     });
+    this.bindSaveScreen();
     this.refresh();
+  }
+
+  /** Écran d'export / import de la sauvegarde. */
+  private bindSaveScreen(): void {
+    const { handlers } = this;
+    const fileInput = el<HTMLInputElement>('save-file');
+
+    el('btn-save').addEventListener('click', () => {
+      handlers.onNavigate();
+      this.saveCode.value = '';
+      this.resetImport();
+      this.setSaveStatus('');
+      this.saveScreen.classList.remove('hidden');
+    });
+    el('btn-save-back').addEventListener('click', () => {
+      handlers.onNavigate();
+      this.saveScreen.classList.add('hidden');
+    });
+
+    el('btn-export-copy').addEventListener('click', async () => {
+      handlers.onNavigate();
+      this.resetImport();
+      // Le code est aussi affiché et sélectionné : si le presse-papiers est refusé, il reste copiable à la main.
+      this.saveCode.value = exportSave(this.save);
+      this.saveCode.select();
+      try {
+        await navigator.clipboard.writeText(this.saveCode.value);
+        this.setSaveStatus('Code copié. Collez-le dans l’autre navigateur, ou envoyez-le-vous par message.');
+      } catch {
+        this.setSaveStatus('Copie automatique impossible : copiez le code affiché ci-dessus.');
+      }
+    });
+
+    el('btn-export-file').addEventListener('click', () => {
+      handlers.onNavigate();
+      const url = URL.createObjectURL(new Blob([exportSave(this.save)], { type: 'text/plain' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'slime-rush-sauvegarde.txt';
+      link.click();
+      URL.revokeObjectURL(url);
+      this.setSaveStatus('Fichier « slime-rush-sauvegarde.txt » téléchargé.');
+    });
+
+    el('btn-import-file').addEventListener('click', () => {
+      handlers.onNavigate();
+      fileInput.click();
+    });
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files?.[0];
+      // Permet de rechoisir le même fichier ensuite.
+      fileInput.value = '';
+      if (!file) return;
+      this.saveCode.value = await file.text();
+      this.previewImport();
+    });
+
+    // Toute modification du code annule une confirmation en attente.
+    this.saveCode.addEventListener('input', () => {
+      this.resetImport();
+      this.setSaveStatus('');
+    });
+
+    this.importButton.addEventListener('click', () => {
+      handlers.onNavigate();
+      if (!this.pendingImport) {
+        this.previewImport();
+        return;
+      }
+      const data = this.pendingImport;
+      this.resetImport();
+      this.saveCode.value = '';
+      handlers.onImportSave(data);
+      this.setSaveStatus('Sauvegarde importée.');
+    });
+  }
+
+  /** Premier temps de l'import : vérifie le code et annonce ce qui va remplacer la progression actuelle. */
+  private previewImport(): void {
+    const data = importSave(this.saveCode.value);
+    if (!data) {
+      this.resetImport();
+      this.setSaveStatus(
+        this.saveCode.value.trim() ? 'Ce code de sauvegarde n’est pas valide.' : 'Collez d’abord un code ou choisissez un fichier.',
+        true,
+      );
+      return;
+    }
+    this.pendingImport = data;
+    this.importButton.textContent = 'Confirmer';
+    const best = data.bestTime > 0 ? formatTime(data.bestTime) : '--:--';
+    const characters = `${data.unlocked.length} personnage${data.unlocked.length > 1 ? 's' : ''}`;
+    this.setSaveStatus(
+      `Sauvegarde trouvée : 🪙 ${data.gold} · 🏆 ${best} · ${characters}. Elle remplacera votre progression actuelle (🪙 ${this.save.gold}).`,
+    );
+  }
+
+  private resetImport(): void {
+    this.pendingImport = null;
+    this.importButton.textContent = 'Importer';
+  }
+
+  private setSaveStatus(text: string, error = false): void {
+    this.saveStatus.textContent = text;
+    this.saveStatus.classList.toggle('error', error);
   }
 
   /** Active le bouton Jouer une fois les modèles chargés. */
@@ -136,12 +250,12 @@ export class Ui {
 
   showMenu(): void {
     this.refresh();
-    for (const node of [this.hud, this.shop, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
+    for (const node of [this.hud, this.shop, this.saveScreen, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
     this.start.classList.remove('hidden');
   }
 
   showGame(): void {
-    for (const node of [this.start, this.shop, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
+    for (const node of [this.start, this.shop, this.saveScreen, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
     this.hud.classList.remove('hidden');
   }
 

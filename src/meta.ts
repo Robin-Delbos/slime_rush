@@ -102,29 +102,60 @@ export function loadSave(storage: StorageLike | null): SaveData {
   try {
     const raw = storage.getItem(SAVE_KEY);
     if (!raw) return save;
-    const data = JSON.parse(raw) as Partial<SaveData>;
-    if (typeof data !== 'object' || data === null) return save;
-
-    if (Number.isFinite(data.gold)) save.gold = Math.max(0, Math.floor(data.gold!));
-    if (Number.isFinite(data.bestTime)) save.bestTime = Math.max(0, data.bestTime!);
-    if (typeof data.muted === 'boolean') save.muted = data.muted;
-    if (data.shop && typeof data.shop === 'object') {
-      for (const item of SHOP_ITEMS) {
-        const level = Number(data.shop[item.id]);
-        if (Number.isFinite(level) && level > 0) save.shop[item.id] = Math.min(item.max, Math.floor(level));
-      }
-    }
-    if (Array.isArray(data.unlocked)) {
-      for (const c of CHARACTERS) {
-        if (data.unlocked.includes(c.id) && !save.unlocked.includes(c.id)) save.unlocked.push(c.id);
-      }
-    }
-    if (typeof data.selected === 'string' && save.unlocked.includes(data.selected)) save.selected = data.selected;
+    return sanitizeSave(JSON.parse(raw));
   } catch {
     // Sauvegarde illisible : on repart d'une sauvegarde neuve plutôt que de planter.
     return defaultSave();
   }
+}
+
+/** Reconstruit une sauvegarde valide à partir de données quelconques : tout ce qui est invalide est ignoré. */
+function sanitizeSave(raw: unknown): SaveData {
+  const save = defaultSave();
+  if (typeof raw !== 'object' || raw === null) return save;
+  const data = raw as Partial<SaveData>;
+
+  if (Number.isFinite(data.gold)) save.gold = Math.max(0, Math.floor(data.gold!));
+  if (Number.isFinite(data.bestTime)) save.bestTime = Math.max(0, data.bestTime!);
+  if (typeof data.muted === 'boolean') save.muted = data.muted;
+  if (data.shop && typeof data.shop === 'object') {
+    for (const item of SHOP_ITEMS) {
+      const level = Number(data.shop[item.id]);
+      if (Number.isFinite(level) && level > 0) save.shop[item.id] = Math.min(item.max, Math.floor(level));
+    }
+  }
+  if (Array.isArray(data.unlocked)) {
+    for (const c of CHARACTERS) {
+      if (data.unlocked.includes(c.id) && !save.unlocked.includes(c.id)) save.unlocked.push(c.id);
+    }
+  }
+  if (typeof data.selected === 'string' && save.unlocked.includes(data.selected)) save.selected = data.selected;
   return save;
+}
+
+/** En-tête des codes de sauvegarde : permet de rejeter un texte qui n'en est pas un. */
+const EXPORT_PREFIX = 'SLIMERUSH1:';
+
+/** Code texte à copier ou à enregistrer pour transporter la sauvegarde vers un autre navigateur ou appareil. */
+export function exportSave(save: SaveData): string {
+  return EXPORT_PREFIX + btoa(JSON.stringify(save));
+}
+
+/**
+ * Relit un code produit par exportSave. Renvoie null si le texte n'est pas un code de sauvegarde.
+ * Les valeurs sont nettoyées comme au chargement : un code modifié à la main ne peut pas donner un état invalide.
+ */
+export function importSave(text: string): SaveData | null {
+  // Les messageries ajoutent volontiers des espaces ou des retours à la ligne.
+  const code = text.replace(/\s+/g, '');
+  if (!code.startsWith(EXPORT_PREFIX)) return null;
+  try {
+    const data: unknown = JSON.parse(atob(code.slice(EXPORT_PREFIX.length)));
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) return null;
+    return sanitizeSave(data);
+  } catch {
+    return null;
+  }
 }
 
 export function persistSave(storage: StorageLike | null, save: SaveData): void {
