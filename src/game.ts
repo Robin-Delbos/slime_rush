@@ -7,6 +7,7 @@ import { Input } from './input';
 import {
   CHARACTERS,
   browserStorage,
+  addLegend,
   buyShopItem,
   chooseCharacter,
   chooseDifficulty,
@@ -17,7 +18,9 @@ import {
   selectedDifficulty,
   startingStats,
 } from './meta';
-import { Run } from './run';
+import { LEGEND_LEVEL, Run } from './run';
+import { PASSIVES, WEAPON_PREFIX } from './upgrades';
+import { WEAPONS } from './weaponData';
 import { Ui } from './ui';
 import type { Upgrade } from './upgrades';
 import { World } from './world';
@@ -27,6 +30,8 @@ type State = 'loading' | 'menu' | 'playing' | 'paused' | 'levelup' | 'dying' | '
 const LEVEL_UP_COLOR = new THREE.Color(0xffe14d);
 const SPECIAL_COLOR = new THREE.Color(0xffb13d);
 const AURA_COLOR = new THREE.Color(0xff8a3d);
+/** Confettis du mode Légende. */
+const LEGEND_COLORS = [0xffd84d, 0xffffff, 0x6fe9ff, 0xff7ad9, 0x8dff6f].map((c) => new THREE.Color(c));
 const DUST_COLOR = new THREE.Color(0xd9cfa0);
 const WHITE = new THREE.Color(0xffffff);
 /** Couleur de l'éclat de départ des projectiles de chaque arme. */
@@ -57,6 +62,8 @@ export class Game {
   /** Temps restant du clignotement du héros après un coup. */
   private hurtTimer = 0;
   private dustTimer = 0;
+  private bossPoint = new THREE.Vector3();
+  private legendTimer = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.world = new World(canvas);
@@ -190,6 +197,47 @@ export class Game {
         effects.shockwave(player.x, player.z, 3.5, LEVEL_UP_COLOR);
         effects.ring(player.x, player.z, 1.2, LEVEL_UP_COLOR, 18, 0.2);
       },
+      onBossWave: (_wave, count) => {
+        sfx.play('boss');
+        world.shake(0.5);
+        this.ui.showBanner(count > 1 ? `⚠ Boss ×${count} !` : '⚠ Boss !');
+      },
+      onBossSpawn: (e) => {
+        effects.shockwave(e.x, e.z, 5, e.type.color);
+        effects.burst(e.x, 1.5, e.z, e.type.color, 30, 9, 0.28);
+      },
+      onBossSlam: (e, radius) => {
+        sfx.play('special');
+        world.shake(0.6);
+        effects.shockwave(e.x, e.z, radius, e.type.color);
+        effects.ring(e.x, e.z, radius * 0.9, e.type.color, 32, 0.3);
+        effects.puff(e.x, 0.4, e.z, e.type.color, 1.4, 6);
+      },
+      onBossFire: (e) => {
+        sfx.play('shoot');
+        effects.burst(e.x, e.type.size * 0.6, e.z, e.type.color, 12, 6, 0.2);
+      },
+      onBossKilled: (e) => {
+        sfx.play('special');
+        world.shake(0.9);
+        effects.shockwave(e.x, e.z, 9, e.type.color);
+        effects.burst(e.x, 1.5, e.z, e.type.color, 70, 13, 0.32);
+        effects.puff(e.x, 1, e.z, e.type.color, 2, 8);
+        effects.ring(e.x, e.z, 2.5, LEVEL_UP_COLOR, 30, 0.3);
+      },
+      onLegend: () => {
+        // Le badge (arme + difficulté jouées) est enregistré tout de suite : il est acquis même si la partie se termine peu après.
+        addLegend(this.save, this.save.weapon, this.save.difficulty);
+        this.commit();
+        sfx.play('legend');
+        world.shake(0.7);
+        this.ui.showBanner('👑 LÉGENDE ! 60 s', 'legend');
+        const { player } = this.run!;
+        effects.shockwave(player.x, player.z, 14, LEGEND_COLORS[0]);
+        effects.ring(player.x, player.z, 2, LEGEND_COLORS[0], 36, 0.3);
+        for (const color of LEGEND_COLORS) effects.burst(player.x, 2.5, player.z, color, 30, 11, 0.24);
+      },
+      onLegendEnd: () => this.ui.showBanner('Fin du mode Légende', 'legend'),
       onSpecialReady: () => sfx.play('ready'),
       onSpecial: (x, z, radius) => {
         sfx.play('special');
@@ -312,12 +360,50 @@ export class Game {
     this.view?.update(dt, heroState, player.stats.speed);
 
     this.updateHeroEffects(dt, run, heroState);
+    this.updateBossBars(run);
+    this.updateLegend(dt, run);
     this.effects.update(dt);
     this.world.follow(player.x, player.z, dt);
     if (this.state !== 'menu') {
       this.ui.updateHud(player.hp, player.stats.maxHp, run.xp / run.xpNeeded, run.level, run.time, run.kills, run.gold, run.charge);
     }
     this.world.render();
+  }
+
+  /** Mode Légende : compte à rebours, pluie de confettis et pulsations dorées autour du héros. */
+  private updateLegend(dt: number, run: Run): void {
+    const active = this.state === 'playing' && run.legendTime > 0;
+    this.ui.setLegend(this.state === 'playing' || this.state === 'paused' || this.state === 'levelup' ? run.legendTime : 0);
+    if (!active) return;
+    const { player } = run;
+    this.legendTimer -= dt;
+    if (this.legendTimer > 0) return;
+    this.legendTimer = 0.3;
+    const color = LEGEND_COLORS[Math.floor(Math.random() * LEGEND_COLORS.length)];
+    this.effects.burst(player.x + (Math.random() - 0.5) * 12, 3.5, player.z + (Math.random() - 0.5) * 8, color, 5, 2, 0.2);
+    this.effects.ring(player.x, player.z, 1.3, LEGEND_COLORS[0], 8, 0.16);
+  }
+
+  /** Barre de vie au-dessus de chaque boss (ramenée au bord de l'écran s'il est hors champ). */
+  private updateBossBars(run: Run): void {
+    const inGame = this.state === 'playing' || this.state === 'paused' || this.state === 'levelup';
+    if (!inGame) {
+      this.ui.setBossBars([]);
+      return;
+    }
+    const bars: { x: number; y: number; ratio: number; off: boolean }[] = [];
+    for (const e of run.enemies.list) {
+      if (!e.boss) continue;
+      this.bossPoint.set(e.x, e.type.size + 0.9, e.z).project(this.world.camera);
+      const behind = this.bossPoint.z > 1;
+      const px = behind ? -this.bossPoint.x : this.bossPoint.x;
+      const py = behind ? -this.bossPoint.y : this.bossPoint.y;
+      const x = ((px + 1) / 2) * 100;
+      const y = ((1 - py) / 2) * 100;
+      const off = behind || x < 5 || x > 95 || y < 12 || y > 92;
+      bars.push({ x: Math.min(94, Math.max(6, x)), y: Math.min(90, Math.max(14, y)), ratio: e.hp / e.maxHp, off });
+    }
+    this.ui.setBossBars(bars);
   }
 
   /** Poussière sous les pas du héros et clignotement quand il est touché. */
@@ -376,12 +462,54 @@ export class Game {
         charge: this.run?.charge ?? 0,
         gold: this.save.gold,
         selected: this.save.selected,
+        legendTime: this.run?.legendTime ?? 0,
+        legendBadges: JSON.parse(JSON.stringify(this.save.legend)) as Record<string, string[]>,
+        bosses: this.run?.enemies.bossCount ?? 0,
+        bossWave: this.run?.bossWave ?? 0,
+        pickups: this.run?.pickups.count ?? 0,
         weapon: this.save.weapon,
         weapons: this.run?.weapons.owned ?? [],
         difficulty: this.save.difficulty,
         hasModel: this.view !== null,
       }),
       kill: () => this.run?.player.takeDamage(1e9),
+      /** Avance le chronomètre de la partie (pour déclencher une vague de boss). */
+      setTime: (t: number) => {
+        if (this.run) this.run.time = t;
+      },
+      /** Amène les boss à `distance` à droite du héros, en pleine visée (pour les captures du test). */
+      bringBosses: (distance: number) => {
+        const run = this.run;
+        if (!run) return;
+        for (const e of run.enemies.list) {
+          if (!e.boss) continue;
+          e.x = run.player.x + distance;
+          e.z = run.player.z;
+          e.boss = { phase: 'aim', attack: 'charge', timer: 1.1, dirX: -1, dirZ: 0 };
+        }
+      },
+      /** Amène le héros au bord du niveau 100 : le prochain gain d'XP déclenche le mode Légende. */
+      legend: () => {
+        const run = this.run;
+        if (!run) return;
+        run.level = LEGEND_LEVEL - 1;
+        run.xp = run.xpNeeded;
+      },
+      /** Tue tous les boss vivants. */
+      killBosses: () => {
+        for (const e of this.run?.enemies.list ?? []) if (e.boss) e.hp = 0;
+      },
+      /** Met toutes les améliorations au maximum. */
+      maxUpgrades: () => {
+        const run = this.run;
+        if (!run) return;
+        for (const u of PASSIVES) run.upgradeLevels.set(u.id, u.max);
+        for (const w of WEAPONS) run.upgradeLevels.set(WEAPON_PREFIX + w.id, w.levels.length);
+      },
+      /** Donne juste assez d'XP pour passer un niveau. */
+      levelUp: () => {
+        if (this.run) this.run.xp = this.run.xpNeeded;
+      },
       /** Fait apparaître `count` slimes en cercle à `distance` du héros. */
       spawn: (count: number, distance: number) => {
         const run = this.run;

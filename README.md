@@ -48,7 +48,7 @@ Si la page ne s'ouvre pas, le pare-feu du PC bloque probablement les connexions 
 | Attaque spéciale | Clic bref sur la zone à frapper, ou `Espace` (vise l'ennemi le plus proche) | Appui bref sur la zone à frapper |
 | Pause | `Échap` ou `P`, ou bouton ⏸ | Bouton ⏸ |
 
-Les armes attaquent toutes seules. À chaque niveau, on choisit une carte en cliquant ou en touchant : niveau suivant de votre arme, ou bonus passif.
+Les armes attaquent toutes seules. À chaque niveau, on choisit une carte en cliquant ou en touchant : niveau suivant de votre arme, ou bonus passif. Chaque passage de niveau rend aussi 10 % des PV max.
 
 **Attaque spéciale** : la jauge en bas à droite se remplit en tuant des ennemis (30 slimes, ou moins avec de gros ennemis). Quand elle brille, un appui bref sur le terrain déclenche une explosion de zone à cet endroit. Les ennemis tués par l'explosion ne rechargent pas la jauge.
 
@@ -88,6 +88,15 @@ Quatre niveaux au choix au menu. Plus c'est difficile, plus il y a d'ennemis, r�
 | 💀 Extrême | ×1,5 / ×1,7 / ×1,8 | ×2,2 |
 
 Dans tous les cas, la force des ennemis augmente avec le temps de partie, et plus vite passé 3 minutes.
+
+## Boss
+
+Un boss arrive toutes les **2 minutes**, avec **un boss de plus à chaque vague** (jusqu'à 4 en même temps, apparition espacée de quelques secondes). Un message et un cor d'alarme l'annoncent.
+
+- Il est lent et très résistant, et sa force suit le temps de partie comme celle des autres ennemis (et la difficulté choisie).
+- Il s'arrête pour viser : une bande rouge au sol montre la direction de sa charge, qu'il faut esquiver en se décalant.
+- Chaque boss a sa barre de vie au-dessus de lui ; hors de l'écran, elle est ramenée au bord pour montrer d'où il vient.
+- À sa mort, il lâche une grosse gerbe de pièces et de gemmes d'XP.
 
 ## Progression entre les parties
 
@@ -143,7 +152,7 @@ Réglage à faire une seule fois sur GitHub : *Settings → Pages → Source : G
 | `src/game.ts` | Chef d'orchestre : relie simulation, rendu, interface, sons et sauvegarde |
 | `src/run.ts` | Simulation d'une partie, sans affichage (c'est elle que les tests font tourner) |
 | `src/player.ts` | État et caractéristiques du héros |
-| `src/enemies.ts` | Types d'ennemis, apparition, déplacement, affichage instancié |
+| `src/enemies.ts` | Types d'ennemis et de boss, apparition, déplacement, affichage instancié |
 | `src/weapons.ts` | Comportement des armes (projectiles, orbes, aura, lances) |
 | `src/weaponData.ts` | Catalogue des armes : niveaux et valeurs, sans rendu |
 | `src/pickups.ts` | Gemmes d'XP et pièces |
@@ -165,6 +174,7 @@ Réglage à faire une seule fois sur GitHub : *Settings → Pages → Source : G
 - **Bonus passif en partie** : une entrée dans `PASSIVES` (`src/upgrades.ts`).
 - **Arme** : ses 6 niveaux dans `WEAPONS` (`src/weaponData.ts`) et son comportement dans `src/weapons.ts`. Le test « Données des armes » vérifie que chaque niveau apporte quelque chose.
 - **Difficulté** : une entrée dans `DIFFICULTIES` (`src/meta.ts`).
+- **Boss** : un type avec `boss: true` dans `DEFS` (`src/enemies.ts`) ; la cadence et le plafond sont dans `src/run.ts` (`BOSS_INTERVAL`, `MAX_BOSSES`).
 - **Amélioration permanente** : une entrée dans `SHOP_ITEMS` (`src/meta.ts`).
 - **Apparence** : une entrée dans `CHARACTERS` (`src/meta.ts`) et son modèle dans `public/models/`. Le modèle doit contenir des animations nommées `Idle`, `Run` (ou `Running`) et `Death`.
 - **Ennemi** : une entrée dans `DEFS` (`src/enemies.ts`), et son modèle dans `ENEMY_MODELS` (`src/assets.ts`).

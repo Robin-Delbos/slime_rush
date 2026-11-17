@@ -4,12 +4,14 @@ import {
   DIFFICULTIES,
   SAVE_KEY,
   SHOP_ITEMS,
+  addLegend,
   buyShopItem,
   chooseCharacter,
   chooseDifficulty,
   chooseWeapon,
   defaultSave,
   exportSave,
+  hasLegend,
   importSave,
   loadSave,
   persistSave,
@@ -110,6 +112,7 @@ describe('Export et import de la sauvegarde', () => {
     save.weapons = ['rifle', 'spear'];
     save.weapon = 'spear';
     save.difficulty = 'extreme';
+    save.legend = { spear: ['hard', 'extreme'] };
     return save;
   }
 
@@ -159,6 +162,78 @@ describe('Export et import de la sauvegarde', () => {
     copy.shop.vitality = 9;
     copy.unlocked.push('pip');
     expect(save).toEqual(richSave());
+  });
+});
+
+describe('Badge du niveau 100', () => {
+  it('est vide au départ et conservé dans la sauvegarde', () => {
+    expect(defaultSave().legend).toEqual({});
+    const storage = memoryStorage();
+    const save = defaultSave();
+    save.legend = { rifle: ['normal'], aura: ['easy', 'extreme'] };
+    persistSave(storage, save);
+    expect(loadSave(storage).legend).toEqual({ rifle: ['normal'], aura: ['easy', 'extreme'] });
+  });
+
+  it('est propre à chaque arme ET à chaque difficulté', () => {
+    const save = defaultSave();
+    expect(hasLegend(save, 'rifle', 'normal')).toBe(false);
+    expect(addLegend(save, 'rifle', 'normal')).toBe(true);
+    expect(hasLegend(save, 'rifle', 'normal')).toBe(true);
+    // Une autre difficulté, ou une autre arme, n'a pas le badge.
+    expect(hasLegend(save, 'rifle', 'hard')).toBe(false);
+    expect(hasLegend(save, 'rifle', 'easy')).toBe(false);
+    expect(hasLegend(save, 'aura', 'normal')).toBe(false);
+  });
+
+  it('suit la difficulté choisie quand on ne la précise pas', () => {
+    const save = defaultSave();
+    addLegend(save, 'rifle', 'hard');
+    save.weapon = 'rifle';
+    save.difficulty = 'easy';
+    expect(hasLegend(save, 'rifle')).toBe(false);
+    save.difficulty = 'hard';
+    expect(hasLegend(save, 'rifle')).toBe(true);
+  });
+
+  it('cumule plusieurs difficultés pour une même arme, dans l’ordre, sans doublon', () => {
+    const save = defaultSave();
+    expect(addLegend(save, 'rifle', 'extreme')).toBe(true);
+    expect(addLegend(save, 'rifle', 'easy')).toBe(true);
+    expect(addLegend(save, 'rifle', 'easy')).toBe(false);
+    expect(save.legend.rifle).toEqual(['easy', 'extreme']);
+  });
+
+  it('refuse une arme ou une difficulté inconnue', () => {
+    const save = defaultSave();
+    expect(addLegend(save, 'bazooka', 'normal')).toBe(false);
+    expect(addLegend(save, 'rifle', 'impossible')).toBe(false);
+    expect(save.legend).toEqual({});
+  });
+
+  it('ignore les armes et difficultés inconnues et les doublons à la lecture', () => {
+    const raw = JSON.stringify({ legend: { aura: ['hard', 'easy', 'hard', 'impossible'], bazooka: ['easy'], rifle: 'normal', spear: [] } });
+    expect(loadSave(memoryStorage({ [SAVE_KEY]: raw })).legend).toEqual({ aura: ['easy', 'hard'] });
+  });
+
+  it('ignore l’ancien format (liste d’armes) et les valeurs invalides', () => {
+    for (const legend of [['rifle'], 'rifle', 42, null]) {
+      expect(loadSave(memoryStorage({ [SAVE_KEY]: JSON.stringify({ legend }) })).legend, JSON.stringify(legend)).toEqual({});
+    }
+  });
+
+  it('reste lisible pour une ancienne sauvegarde qui n’en avait pas', () => {
+    const raw = JSON.stringify({ gold: 12, weapon: 'rifle' });
+    const save = loadSave(memoryStorage({ [SAVE_KEY]: raw }));
+    expect(save.legend).toEqual({});
+    expect(save.gold).toBe(12);
+  });
+
+  it('survit à un export puis un import', () => {
+    const save = defaultSave();
+    addLegend(save, 'spear', 'hard');
+    addLegend(save, 'spear', 'extreme');
+    expect(importSave(exportSave(save))!.legend).toEqual({ spear: ['hard', 'extreme'] });
   });
 });
 

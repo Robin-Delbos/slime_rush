@@ -19,6 +19,8 @@ export interface SaveData {
   weapon: string;
   /** Identifiant de la difficulté choisie. */
   difficulty: string;
+  /** Niveau 100 atteint : pour chaque arme, les difficultés avec lesquelles c'est arrivé (badge au menu). */
+  legend: Record<string, string[]>;
   muted: boolean;
 }
 
@@ -97,6 +99,7 @@ export function defaultSave(): SaveData {
     weapons: [DEFAULT_WEAPON],
     weapon: DEFAULT_WEAPON,
     difficulty: DEFAULT_DIFFICULTY,
+    legend: {},
     muted: false,
   };
 }
@@ -153,6 +156,15 @@ function sanitizeSave(raw: unknown): SaveData {
     }
   }
   if (typeof data.weapon === 'string' && save.weapons.includes(data.weapon)) save.weapon = data.weapon;
+  // Une ancienne sauvegarde (liste d'armes sans difficulté) est ignorée : seul le format par difficulté est lu.
+  if (data.legend && typeof data.legend === 'object' && !Array.isArray(data.legend)) {
+    for (const w of WEAPONS) {
+      const levels = (data.legend as Record<string, unknown>)[w.id];
+      if (!Array.isArray(levels)) continue;
+      const known = DIFFICULTIES.filter((d) => levels.includes(d.id)).map((d) => d.id);
+      if (known.length > 0) save.legend[w.id] = known;
+    }
+  }
   if (typeof data.difficulty === 'string' && DIFFICULTIES.some((d) => d.id === data.difficulty)) save.difficulty = data.difficulty;
   return save;
 }
@@ -204,6 +216,21 @@ export function buyShopItem(save: SaveData, id: string): boolean {
   if (level >= item.max || save.gold < cost) return false;
   save.gold -= cost;
   save.shop[id] = level + 1;
+  return true;
+}
+
+/** Vrai si le niveau 100 a été atteint avec cette arme à cette difficulté (par défaut, la difficulté choisie). */
+export function hasLegend(save: SaveData, weaponId: string, difficultyId = save.difficulty): boolean {
+  return save.legend[weaponId]?.includes(difficultyId) ?? false;
+}
+
+/** Enregistre le niveau 100 atteint avec cette arme à cette difficulté. Renvoie false si c'était déjà noté ou inconnu. */
+export function addLegend(save: SaveData, weaponId: string, difficultyId: string): boolean {
+  if (!weaponDef(weaponId) || !DIFFICULTIES.some((d) => d.id === difficultyId)) return false;
+  if (hasLegend(save, weaponId, difficultyId)) return false;
+  const known = new Set([...(save.legend[weaponId] ?? []), difficultyId]);
+  // Toujours dans l'ordre des difficultés, pour une sauvegarde stable.
+  save.legend[weaponId] = DIFFICULTIES.filter((d) => known.has(d.id)).map((d) => d.id);
   return true;
 }
 

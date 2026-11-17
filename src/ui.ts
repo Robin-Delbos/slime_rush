@@ -1,4 +1,4 @@
-import { CHARACTERS, DIFFICULTIES, SHOP_ITEMS, exportSave, importSave, shopCost, type SaveData } from './meta';
+import { CHARACTERS, DIFFICULTIES, SHOP_ITEMS, exportSave, hasLegend, importSave, shopCost, type SaveData } from './meta';
 import { countUp } from './anim';
 import { WEAPON_PREFIX } from './upgrades';
 import { WEAPONS } from './weaponData';
@@ -82,6 +82,11 @@ export class Ui {
   private shop = el('overlay-shop');
   private levelUp = el('overlay-levelup');
   private cards = el('cards');
+  private bossBars = el('boss-bars');
+  private banner = el('banner');
+  private bannerTimer = 0;
+  private legendPill = el('legend');
+  private legendShown = 0;
   private pause = el('overlay-pause');
   private gameOver = el('overlay-gameover');
   private playButton = el<HTMLButtonElement>('btn-start');
@@ -258,6 +263,13 @@ export class Ui {
       card.dataset.id = w.id;
       const status = selected ? '✔ Choisie' : unlocked ? 'Choisir' : `🪙 ${w.cost}`;
       card.append(iconElement('weapon-icon', w.icon), make('span', 'char-name', w.name), make('span', 'char-desc', w.desc), make('span', 'char-status', status));
+      // Le badge n'apparaît que pour la difficulté avec laquelle le niveau 100 a été atteint.
+      if (hasLegend(save, w.id)) {
+        const badge = make('span', 'legend-badge', '🏆');
+        const difficulty = DIFFICULTIES.find((d) => d.id === save.difficulty)?.name ?? '';
+        badge.title = `Niveau 100 atteint avec cette arme en difficulté ${difficulty}`;
+        card.append(badge);
+      }
       card.addEventListener('click', () => this.handlers.onSelectWeapon(w.id));
       weapons.append(card);
     }
@@ -341,7 +353,7 @@ export class Ui {
       // Les cartes arrivent l'une après l'autre.
       card.style.setProperty('--i', String(index));
       card.append(
-        make('span', 'card-tag', isWeapon ? 'Arme' : 'Bonus'),
+        make('span', 'card-tag', isWeapon ? 'Arme' : 'Passif'),
         iconElement('card-icon', upgrade.icon),
         make('span', 'card-name', upgrade.name),
         make('span', 'card-desc', upgrade.desc),
@@ -354,6 +366,48 @@ export class Ui {
       this.cards.append(card);
     });
     this.levelUp.classList.remove('hidden');
+  }
+
+  /** Compte à rebours du mode Légende (0 ou moins : masqué). */
+  setLegend(secondsLeft: number): void {
+    const seconds = Math.ceil(secondsLeft);
+    if (seconds === this.legendShown) return;
+    this.legendShown = seconds;
+    this.legendPill.classList.toggle('hidden', seconds <= 0);
+    if (seconds > 0) this.legendPill.textContent = `👑 Légende ${seconds} s`;
+  }
+
+  /** Bannière centrale qui s'affiche un instant (arrivée d'un boss). */
+  showBanner(text: string, kind: 'boss' | 'legend' = 'boss'): void {
+    this.banner.textContent = text;
+    this.banner.classList.toggle('legend', kind === 'legend');
+    this.banner.classList.remove('hidden', 'show');
+    // Relance l'animation même si une bannière précédente est encore affichée.
+    void this.banner.offsetWidth;
+    this.banner.classList.add('show');
+    window.clearTimeout(this.bannerTimer);
+    this.bannerTimer = window.setTimeout(() => this.banner.classList.add('hidden'), 2600);
+  }
+
+  /**
+   * Barres de vie des boss. `x` et `y` sont en pourcentage de l'écran ; `off` indique un boss hors de l'écran,
+   * dont la barre est alors ramenée au bord pour montrer d'où il vient.
+   */
+  setBossBars(bars: { x: number; y: number; ratio: number; off: boolean }[]): void {
+    while (this.bossBars.children.length < bars.length) {
+      const bar = make('div', 'boss-bar');
+      bar.append(make('span', 'boss-skull', '💀'), make('div', 'boss-track'));
+      bar.lastElementChild!.append(make('div', 'boss-fill'));
+      this.bossBars.append(bar);
+    }
+    while (this.bossBars.children.length > bars.length) this.bossBars.lastElementChild!.remove();
+    bars.forEach((b, i) => {
+      const node = this.bossBars.children[i] as HTMLElement;
+      node.style.left = `${b.x}%`;
+      node.style.top = `${b.y}%`;
+      node.classList.toggle('off', b.off);
+      (node.querySelector('.boss-fill') as HTMLElement).style.width = `${Math.max(0, Math.min(1, b.ratio)) * 100}%`;
+    });
   }
 
   /** Fait monter l'or gagné de 0 à sa valeur, et le total avec lui. */

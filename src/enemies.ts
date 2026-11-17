@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Player } from './player';
 import { rand, random } from './rng';
-import { toonMaterial } from './world';
+import { ARENA, toonMaterial } from './world';
 
 export interface EnemyType {
   index: number;
@@ -24,19 +24,26 @@ export interface EnemyType {
   weight: number;
   /** Cycles d'animation par seconde. */
   animSpeed: number;
+  /** Boss : n'apparaît jamais au hasard, mais par vagues (voir `Run`). */
+  boss: boolean;
+  /** Attaques d'un boss (vide pour les ennemis ordinaires). */
+  attacks: BossAttack[];
 }
 
 type TypeDef = Omit<EnemyType, 'index' | 'color'> & { color: number };
 
 const DEFS: TypeDef[] = [
   // Slime : l'ennemi de base.
-  { id: 'slime', color: 0x4fd66b, radius: 0.5, size: 1.0, hp: 8, speed: 2.2, damage: 9, xp: 1, coinChance: 0.18, coinValue: 1, from: 0, weight: 10, animSpeed: 1.3 },
+  { id: 'slime', boss: false, attacks: [], color: 0x4fd66b, radius: 0.5, size: 1.0, hp: 8, speed: 2.2, damage: 9, xp: 1, coinChance: 0.18, coinValue: 1, from: 0, weight: 10, animSpeed: 1.3 },
   // Chauve-souris : petite, fragile, rapide.
-  { id: 'bat', color: 0xb46bff, radius: 0.4, size: 1.3, hp: 5, speed: 4.1, damage: 6, xp: 1, coinChance: 0.18, coinValue: 1, from: 30, weight: 4, animSpeed: 2.2 },
+  { id: 'bat', boss: false, attacks: [], color: 0xb46bff, radius: 0.4, size: 1.3, hp: 5, speed: 4.1, damage: 6, xp: 1, coinChance: 0.18, coinValue: 1, from: 30, weight: 4, animSpeed: 2.2 },
   // Orc : gros sac à PV qui lâche une grosse gemme et toujours des pièces.
-  { id: 'orc', color: 0x6fae4a, radius: 0.95, size: 2.3, hp: 70, speed: 1.6, damage: 21, xp: 6, coinChance: 1, coinValue: 5, from: 60, weight: 1, animSpeed: 1 },
+  { id: 'orc', boss: false, attacks: [], color: 0x6fae4a, radius: 0.95, size: 2.3, hp: 70, speed: 1.6, damage: 21, xp: 6, coinChance: 1, coinValue: 5, from: 60, weight: 1, animSpeed: 1 },
   // Crâne : intermédiaire rapide et résistant.
-  { id: 'skull', color: 0xe9e4d4, radius: 0.55, size: 1.1, hp: 22, speed: 2.9, damage: 12, xp: 3, coinChance: 0.3, coinValue: 2, from: 90, weight: 3, animSpeed: 1.6 },
+  { id: 'skull', boss: false, attacks: [], color: 0xe9e4d4, radius: 0.55, size: 1.1, hp: 22, speed: 2.9, damage: 12, xp: 3, coinChance: 0.3, coinValue: 2, from: 90, weight: 3, animSpeed: 1.6 },
+  // Boss : très résistants et rapides, avec des attaques annoncées (charge, onde de choc, salve de tirs). Jamais tirés au hasard (from: Infinity).
+  { id: 'boss-orc', boss: true, attacks: ['charge', 'slam'], color: 0xd9482e, radius: 1.9, size: 4.4, hp: 600, speed: 3, damage: 20, xp: 12, coinChance: 0, coinValue: 0, from: Infinity, weight: 0, animSpeed: 0.8 },
+  { id: 'boss-skull', boss: true, attacks: ['charge', 'volley'], color: 0x9b59d0, radius: 1.6, size: 3.8, hp: 520, speed: 3.6, damage: 18, xp: 12, coinChance: 0, coinValue: 0, from: Infinity, weight: 0, animSpeed: 1.1 },
 ];
 
 export const ENEMY_TYPES: EnemyType[] = DEFS.map((def, index) => ({
@@ -44,6 +51,49 @@ export const ENEMY_TYPES: EnemyType[] = DEFS.map((def, index) => ({
   index,
   color: new THREE.Color(def.color),
 }));
+
+/** Les types de boss, dans l'ordre où ils se succèdent. */
+export const BOSS_TYPES: EnemyType[] = ENEMY_TYPES.filter((t) => t.boss);
+
+/** Attaques d'un boss : charge en ligne droite, onde de choc autour de lui, salve de projectiles. */
+export type BossAttack = 'charge' | 'slam' | 'volley';
+
+/** Comportement d'un boss : il marche, vise (en s'arrêtant, direction figée), puis passe à l'attaque prévue. */
+export interface BossState {
+  phase: 'walk' | 'aim' | 'charge';
+  /** Prochaine attaque (ou attaque en cours). */
+  attack: BossAttack;
+  timer: number;
+  dirX: number;
+  dirZ: number;
+}
+
+/** Projectile lancé par un boss. */
+interface Bolt {
+  x: number;
+  z: number;
+  vx: number;
+  vz: number;
+  life: number;
+}
+
+/** Durées (s) : marche entre deux attaques, visée selon l'attaque (le joueur voit la zone ou la ligne menacée), charge. */
+export const BOSS_WALK_TIME = 2.4;
+export const BOSS_AIM_TIME: Record<BossAttack, number> = { charge: 0.9, slam: 1, volley: 0.7 };
+export const BOSS_CHARGE_TIME = 0.7;
+export const BOSS_CHARGE_SPEED = 15;
+/** Onde de choc : rayon et dégâts (d'un coup, pas par seconde). */
+export const BOSS_SLAM_RADIUS = 6.5;
+export const BOSS_SLAM_DAMAGE = 24;
+/** Salve : nombre de projectiles, vitesse, durée de vie (donc portée), dégâts par projectile. */
+export const BOSS_VOLLEY_COUNT = 5;
+const BOSS_VOLLEY_SPREAD = 0.3;
+export const BOLT_SPEED = 11;
+export const BOLT_LIFE = 2.2;
+export const BOLT_DAMAGE = 12;
+const BOLT_RADIUS = 0.3;
+const MAX_BOLTS = 80;
+const MAX_MARKERS = 8;
 
 /** Apparence d'un type d'ennemi : une géométrie par image d'animation. */
 export interface EnemyVisual {
@@ -72,11 +122,15 @@ export interface Enemy {
   x: number;
   z: number;
   hp: number;
+  /** PV au moment de l'apparition (pour les barres de vie des boss). */
+  maxHp: number;
   type: EnemyType;
   radius: number;
   angle: number;
   /** Décalage dans le cycle d'animation, pour que les ennemis ne bougent pas tous en rythme. */
   phase: number;
+  /** Présent uniquement pour les boss. */
+  boss?: BossState;
   /** Temps restant du flash blanc après un coup. */
   flash: number;
   /** Temps avant de pouvoir être retouché par un orbe. */
@@ -132,6 +186,15 @@ export class Enemies {
   private spawnBudget = 0;
   /** Ombre ronde sous chaque ennemi : les sépare du sol et de leurs voisins. */
   private shadows: THREE.InstancedMesh;
+  /** Annonces au sol des attaques de boss : bandes (charge, salve) et disques (onde de choc). */
+  private markers: THREE.InstancedMesh;
+  private discs: THREE.InstancedMesh;
+  private bolts: Bolt[] = [];
+  private boltMesh: THREE.InstancedMesh;
+  /** Une onde de choc de boss vient de frapper. */
+  onSlam?: (boss: Enemy, radius: number) => void;
+  /** Un boss vient de tirer une salve. */
+  onFire?: (boss: Enemy) => void;
   /** Difficulté de la partie en cours. */
   mods: EnemyMods = NO_MODS;
 
@@ -162,6 +225,33 @@ export class Enemies {
       new THREE.MeshBasicMaterial({ color: 0x10240f, transparent: true, opacity: 0.38, depthWrite: false }),
       MAX_ENEMIES,
     );
+    this.markers = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1, 0.03, 1),
+      new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.4, depthWrite: false }),
+      MAX_MARKERS,
+    );
+    this.markers.count = 0;
+    this.markers.frustumCulled = false;
+    scene.add(this.markers);
+
+    this.discs = new THREE.InstancedMesh(
+      new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.3, depthWrite: false }),
+      MAX_MARKERS,
+    );
+    this.discs.count = 0;
+    this.discs.frustumCulled = false;
+    scene.add(this.discs);
+
+    this.boltMesh = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(BOLT_RADIUS, 10, 8),
+      new THREE.MeshBasicMaterial({ color: 0xff5a8a }),
+      MAX_BOLTS,
+    );
+    this.boltMesh.count = 0;
+    this.boltMesh.frustumCulled = false;
+    scene.add(this.boltMesh);
+
     this.shadows.position.y = 0.03;
     this.shadows.count = 0;
     this.shadows.frustumCulled = false;
@@ -172,7 +262,14 @@ export class Enemies {
     this.list.length = 0;
     this.corpses.length = 0;
     this.spawnBudget = 0;
+    this.markers.count = this.discs.count = this.boltMesh.count = 0;
+    this.bolts.length = 0;
     this.sync(0);
+  }
+
+  /** Nombre de boss vivants. */
+  get bossCount(): number {
+    return this.list.filter((e) => e.boss).length;
   }
 
   update(dt: number, time: number, player: Player): void {
@@ -187,6 +284,10 @@ export class Enemies {
     const px = player.x;
     const pz = player.z;
     for (const e of this.list) {
+      if (e.boss) {
+        this.updateBoss(e, dt, player, damageScale);
+        continue;
+      }
       const dx = px - e.x;
       const dz = pz - e.z;
       const d = Math.hypot(dx, dz) || 0.0001;
@@ -208,6 +309,21 @@ export class Enemies {
       e.orbCooldown -= dt;
     }
 
+    // Projectiles des boss : avancent en ligne droite, blessent le héros au contact.
+    for (let i = this.bolts.length - 1; i >= 0; i--) {
+      const bolt = this.bolts[i];
+      bolt.x += bolt.vx * dt;
+      bolt.z += bolt.vz * dt;
+      bolt.life -= dt;
+      const reach = BOLT_RADIUS + player.radius;
+      const hit = (bolt.x - px) ** 2 + (bolt.z - pz) ** 2 < reach * reach;
+      if (hit) player.takeDamage(BOLT_DAMAGE * damageScale);
+      if (hit || bolt.life <= 0) {
+        this.bolts[i] = this.bolts[this.bolts.length - 1];
+        this.bolts.pop();
+      }
+    }
+
     for (let i = this.corpses.length - 1; i >= 0; i--) {
       this.corpses[i].age += dt;
       if (this.corpses[i].age >= DEATH_TIME) {
@@ -218,6 +334,94 @@ export class Enemies {
 
     this.separate();
     this.sync(time);
+  }
+
+  /** Boss : marche vers le joueur, s'arrête pour viser, puis lance l'attaque prévue. */
+  private updateBoss(e: Enemy, dt: number, player: Player, damageScale: number): void {
+    const b = e.boss!;
+    const dx = player.x - e.x;
+    const dz = player.z - e.z;
+    const d = Math.hypot(dx, dz) || 0.0001;
+    b.timer -= dt;
+    let vx = 0;
+    let vz = 0;
+    if (b.phase === 'walk') {
+      e.angle = Math.atan2(dx, dz);
+      vx = (dx / d) * e.type.speed;
+      vz = (dz / d) * e.type.speed;
+      if (b.timer <= 0) {
+        // Une onde de choc n'a de sens que de près : sinon le boss charge pour se rapprocher.
+        if (b.attack === 'slam' && d > BOSS_SLAM_RADIUS * 1.8) b.attack = 'charge';
+        // La direction est figée au début de la visée : le joueur peut s'écarter.
+        b.phase = 'aim';
+        b.timer = BOSS_AIM_TIME[b.attack];
+        b.dirX = dx / d;
+        b.dirZ = dz / d;
+      }
+    } else if (b.phase === 'aim') {
+      e.angle = Math.atan2(b.dirX, b.dirZ);
+      if (b.timer <= 0) {
+        if (b.attack === 'charge') {
+          b.phase = 'charge';
+          b.timer = BOSS_CHARGE_TIME;
+        } else {
+          if (b.attack === 'slam') this.slam(e, player, damageScale);
+          else this.volley(e, b);
+          this.endAttack(e, b);
+        }
+      }
+    } else {
+      e.angle = Math.atan2(b.dirX, b.dirZ);
+      vx = b.dirX * BOSS_CHARGE_SPEED;
+      vz = b.dirZ * BOSS_CHARGE_SPEED;
+      if (b.timer <= 0) this.endAttack(e, b);
+    }
+    const limit = ARENA + 2;
+    e.x = Math.max(-limit, Math.min(limit, e.x + vx * dt));
+    e.z = Math.max(-limit, Math.min(limit, e.z + vz * dt));
+
+    // Contact évalué après le déplacement, comme pour les autres ennemis.
+    const reach = e.radius + player.radius;
+    const ex = player.x - e.x;
+    const ez = player.z - e.z;
+    const dist = Math.hypot(ex, ez) || 0.0001;
+    if (dist < reach) {
+      player.takeDamage(e.type.damage * damageScale * dt);
+      e.x = player.x - (ex / dist) * reach;
+      e.z = player.z - (ez / dist) * reach;
+    }
+    e.flash -= dt;
+    e.orbCooldown -= dt;
+  }
+
+  /** Fin d'une attaque : retour à la marche, et choix de la suivante. */
+  private endAttack(e: Enemy, b: BossState): void {
+    b.phase = 'walk';
+    b.timer = BOSS_WALK_TIME;
+    const options = e.type.attacks;
+    b.attack = options[Math.floor(random() * options.length)] ?? 'charge';
+  }
+
+  /** Onde de choc : blesse d'un coup tout ce qui est dans le rayon autour du boss. */
+  private slam(e: Enemy, player: Player, damageScale: number): void {
+    const dist = Math.hypot(player.x - e.x, player.z - e.z);
+    if (dist < BOSS_SLAM_RADIUS + player.radius) player.takeDamage(BOSS_SLAM_DAMAGE * damageScale);
+    this.onSlam?.(e, BOSS_SLAM_RADIUS);
+  }
+
+  /** Salve : un éventail de projectiles dans la direction visée. */
+  private volley(e: Enemy, b: BossState): void {
+    const base = Math.atan2(b.dirZ, b.dirX);
+    for (let i = 0; i < BOSS_VOLLEY_COUNT && this.bolts.length < MAX_BOLTS; i++) {
+      const a = base + (i - (BOSS_VOLLEY_COUNT - 1) / 2) * BOSS_VOLLEY_SPREAD;
+      this.bolts.push({ x: e.x, z: e.z, vx: Math.cos(a) * BOLT_SPEED, vz: Math.sin(a) * BOLT_SPEED, life: BOLT_LIFE });
+    }
+    this.onFire?.(e);
+  }
+
+  /** Nombre de projectiles de boss en vol. */
+  get boltCount(): number {
+    return this.bolts.length;
   }
 
   /** Ennemi vivant le plus proche dans le rayon donné. */
@@ -273,11 +477,13 @@ export class Enemies {
       }
     }
 
+    const hp = type.hp * (1 + time / 90) * this.mods.hp;
     const angle = rand(0, Math.PI * 2);
     const enemy: Enemy = {
       x: aroundX + Math.cos(angle) * SPAWN_DISTANCE,
       z: aroundZ + Math.sin(angle) * SPAWN_DISTANCE,
-      hp: type.hp * (1 + time / 90) * this.mods.hp,
+      hp,
+      maxHp: hp,
       type,
       radius: type.radius,
       angle: 0,
@@ -285,6 +491,15 @@ export class Enemies {
       flash: 0,
       orbCooldown: 0,
     };
+    if (type.boss) {
+      enemy.boss = {
+        phase: 'walk',
+        attack: type.attacks[Math.floor(random() * type.attacks.length)] ?? 'charge',
+        timer: BOSS_WALK_TIME * (0.5 + random() * 0.5),
+        dirX: 0,
+        dirZ: 0,
+      };
+    }
     this.list.push(enemy);
     return enemy;
   }
@@ -338,7 +553,7 @@ export class Enemies {
     for (const e of this.list) {
       const visual = this.visuals[e.type.index];
       // Chaque ennemi a sa propre taille (±10 %), tirée de sa phase : la foule est moins uniforme.
-      const size = 0.92 + e.phase * 0.2;
+      const size = e.boss ? 1 : 0.92 + e.phase * 0.2;
       let sx = size;
       let sy = size;
       if (visual.frames.length === 1) {
@@ -356,6 +571,39 @@ export class Enemies {
       const cycle = time * e.type.animSpeed + e.phase;
       this.place(e.type, cycle, e.x, e.z, e.angle, sx, sy, e.flash > 0 ? FLASH : visual.tint);
     }
+
+    // Annonces au sol des attaques de boss pendant la visée.
+    let strips = 0;
+    let discs = 0;
+    for (const e of this.list) {
+      const b = e.boss;
+      if (!b || b.phase !== 'aim') continue;
+      if (b.attack === 'slam') {
+        if (discs >= MAX_MARKERS) continue;
+        this.p.set(e.x, 0.045, e.z);
+        this.s.set(BOSS_SLAM_RADIUS, 1, BOSS_SLAM_RADIUS);
+        this.discs.setMatrixAt(discs++, this.m.compose(this.p, this.q.identity(), this.s));
+        continue;
+      }
+      if (strips >= MAX_MARKERS) continue;
+      const charge = b.attack === 'charge';
+      const length = charge ? BOSS_CHARGE_SPEED * BOSS_CHARGE_TIME + e.radius : BOLT_SPEED * BOLT_LIFE;
+      this.p.set(e.x + b.dirX * (length / 2), 0.04, e.z + b.dirZ * (length / 2));
+      this.q.setFromAxisAngle(UP, Math.atan2(b.dirX, b.dirZ));
+      this.s.set(charge ? e.radius * 1.7 : 0.9, 1, length);
+      this.markers.setMatrixAt(strips++, this.m.compose(this.p, this.q, this.s));
+    }
+    this.markers.count = strips;
+    this.discs.count = discs;
+    this.markers.instanceMatrix.needsUpdate = true;
+    this.discs.instanceMatrix.needsUpdate = true;
+
+    for (let i = 0; i < this.bolts.length; i++) {
+      this.p.set(this.bolts[i].x, 0.9, this.bolts[i].z);
+      this.boltMesh.setMatrixAt(i, this.m.compose(this.p, this.q.identity(), this.s.setScalar(1)));
+    }
+    this.boltMesh.count = this.bolts.length;
+    this.boltMesh.instanceMatrix.needsUpdate = true;
 
     this.shadows.count = shadows;
     this.shadows.instanceMatrix.clearUpdateRanges();

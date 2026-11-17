@@ -347,6 +347,66 @@ async function scenario(page, url, viewport) {
     check((await page.game()).state === 'menu', 'retour au menu après la partie de test');
   }
 
+  // --- Boss : annonce, barre de vie, butin à la mort ; puis récompenses de niveau ---
+  await page.click('#btn-start');
+  await page.eval('window.__game.setTime(119.5)');
+  await page.waitFor('la bannière de boss', `!document.querySelector('#banner').classList.contains('hidden')`, 5000);
+  check((await page.text('#banner')).includes('Boss'), 'une bannière annonce l’arrivée du boss');
+  await page.waitFor('un boss en jeu', 'window.__game.state().bosses >= 1', 5000);
+  await sleep(600);
+  check((await page.eval(`document.querySelectorAll('.boss-bar').length`)) === 1, 'le boss a sa barre de vie');
+  await shot('10-boss');
+  await page.eval('window.__game.bringBosses(9)');
+  await sleep(450);
+  await shot('10b-boss-proche');
+  const lootBefore = (await page.game()).pickups;
+  await page.eval('window.__game.killBosses()');
+  await page.waitFor('la gerbe de butin du boss', `window.__game.state().pickups >= ${lootBefore + 20}`, 5000);
+  check((await page.game()).bosses === 0, 'le boss est mort');
+  check((await page.eval(`document.querySelectorAll('.boss-bar').length`)) === 0, 'sa barre de vie disparaît avec lui');
+  await sleep(300);
+  await shot('11-butin-boss');
+
+  await page.click('#overlay-levelup:not(.hidden) .card');
+  // Tout au maximum : le niveau suivant ne propose aucune carte, la partie continue.
+  await page.eval('window.__game.maxUpgrades()');
+  await page.eval('window.__game.levelUp()');
+  await sleep(700);
+  check(!(await page.visible('#overlay-levelup')), 'plus aucune carte quand toutes les améliorations sont au maximum');
+  check((await page.game()).state === 'playing', 'la partie continue sans interruption');
+  await page.click('#btn-pause');
+  await page.click('#btn-quit');
+  await page.click('#btn-menu');
+  check((await page.game()).state === 'menu', 'retour au menu après le test des boss');
+  // --- Niveau 100 : mode Légende, puis badge sur l'arme utilisée ---
+  const legendWeapon = (await page.game()).weapon;
+  const legendDifficulty = (await page.game()).difficulty;
+  check(Object.keys((await page.game()).legendBadges).length === 0, 'aucun badge avant d’avoir atteint le niveau 100');
+  await page.click('#btn-start');
+  await page.eval('window.__game.legend()');
+  await page.waitFor('le mode Légende', 'window.__game.state().legendTime > 0', 5000);
+  await page.waitFor('la bannière Légende', `document.querySelector('#banner').textContent.includes('LÉGENDE')`, 3000);
+  check(await page.visible('#legend'), 'le compte à rebours de la Légende s’affiche');
+  check(!(await page.visible('#overlay-levelup')), 'le niveau 100 ne propose aucune carte');
+  check(((await page.game()).legendBadges[legendWeapon] ?? []).includes(legendDifficulty), 'le badge (arme + difficulté) est acquis dès l’entrée dans le mode');
+  // Invincible : même un coup mortel ne tue pas le héros.
+  await page.eval('window.__game.kill()');
+  await sleep(600);
+  check((await page.game()).state === 'playing', 'le héros survit à un coup mortel pendant le mode Légende');
+  await shot('13-legende');
+  await page.click('#btn-pause');
+  await page.click('#btn-quit');
+  await page.click('#btn-menu');
+  await sleep(400);
+  check(await page.eval(`!!document.querySelector('.weapon-card[data-id="${legendWeapon}"] .legend-badge')`), 'le badge apparaît à côté de l’arme utilisée');
+  check((await page.eval(`document.querySelectorAll('.legend-badge').length`)) === 1, 'une seule arme porte le badge');
+  // Le badge est propre à la difficulté : il disparaît pour les autres, et revient avec la bonne.
+  const otherDifficulty = legendDifficulty === 'hard' ? 'normal' : 'hard';
+  await page.click(`.diff-btn[data-id="${otherDifficulty}"]`);
+  check((await page.eval(`document.querySelectorAll('.legend-badge').length`)) === 0, 'le badge n’apparaît pas pour une autre difficulté');
+  await page.click(`.diff-btn[data-id="${legendDifficulty}"]`);
+  check((await page.eval(`document.querySelectorAll('.legend-badge').length`)) === 1, 'le badge revient avec la difficulté d’origine');
+  await shot('14-badge-legende');
   check(page.problems.length === 0, `aucune erreur ni avertissement dans la console${page.problems.length ? ' :\n' + page.problems.join('\n') : ''}`);
 }
 

@@ -1,6 +1,20 @@
 import * as THREE from 'three';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ENEMY_TYPES, enemyDamageScale } from '../src/enemies';
+import {
+  BOLT_DAMAGE,
+  BOLT_LIFE,
+  BOLT_SPEED,
+  BOSS_AIM_TIME,
+  BOSS_CHARGE_SPEED,
+  BOSS_CHARGE_TIME,
+  BOSS_SLAM_DAMAGE,
+  BOSS_SLAM_RADIUS,
+  BOSS_TYPES,
+  BOSS_VOLLEY_COUNT,
+  BOSS_WALK_TIME,
+  ENEMY_TYPES,
+  enemyDamageScale,
+} from '../src/enemies';
 import { Pickups } from '../src/pickups';
 import { Player, baseStats } from '../src/player';
 import { resetRandom, seedRandom } from '../src/rng';
@@ -43,6 +57,18 @@ describe('Player', () => {
     expect(player.hp).toBe(player.stats.maxHp);
   });
 
+  it('ignore les dégâts quand il est invincible, et le redevient à la remise à zéro', () => {
+    const player = new Player(new THREE.Scene());
+    player.invincible = true;
+    player.takeDamage(50);
+    expect(player.hp).toBe(player.stats.maxHp);
+    expect(player.hurt).toBe(false);
+    player.reset(baseStats());
+    expect(player.invincible).toBe(false);
+    player.takeDamage(50);
+    expect(player.hp).toBe(player.stats.maxHp - 50);
+  });
+
   it('régénère ses PV avec la statistique regen', () => {
     const player = new Player(new THREE.Scene());
     player.reset({ ...baseStats(), regen: 2 });
@@ -58,7 +84,245 @@ describe('Enemies', () => {
     for (let i = 0; i < 50; i++) expect(enemies.spawn(0, 0, 0).type.id).toBe('slime');
     const late = new Set<string>();
     for (let i = 0; i < 400; i++) late.add(enemies.spawn(600, 0, 0).type.id);
-    expect([...late].sort()).toEqual(ENEMY_TYPES.map((t) => t.id).sort());
+    // Les boss n'apparaissent jamais au hasard : seulement par vagues.
+    expect([...late].sort()).toEqual(ENEMY_TYPES.filter((t) => !t.boss).map((t) => t.id).sort());
+  });
+
+  describe('boss', () => {
+    const spawnBoss = (arena: ReturnType<typeof makeArena>, type = BOSS_TYPES[0]) => arena.enemies.spawn(0, 0, 0, type);
+    const place = (e: { x: number; z: number }, x: number, z: number) => {
+      e.x = x;
+      e.z = z;
+    };
+    const run = (arena: ReturnType<typeof makeArena>, seconds: number) => {
+      for (let t = 0; t < seconds; t += STEP) arena.enemies.update(STEP, 0, arena.player);
+    };
+    /** Boss de type donné, posé à (x, 0), qui va attaquer dans un instant avec l'attaque voulue. */
+    const readyBoss = (arena: ReturnType<typeof makeArena>, attack: 'charge' | 'slam' | 'volley', x: number, type = BOSS_TYPES[0]) => {
+      const boss = spawnBoss(arena, type);
+      place(boss, x, 0);
+      boss.boss!.attack = attack;
+      boss.boss!.timer = 0.01;
+      return boss;
+    };
+
+    it('existent en deux types, bien plus résistants et plus gros que les autres ennemis', () => {
+      expect(BOSS_TYPES.length).toBeGreaterThanOrEqual(2);
+      const others = ENEMY_TYPES.filter((t) => !t.boss);
+      for (const boss of BOSS_TYPES) {
+        expect(boss.hp, boss.id).toBeGreaterThan(Math.max(...others.map((t) => t.hp)) * 5);
+        expect(boss.radius, boss.id).toBeGreaterThan(Math.max(...others.map((t) => t.radius)));
+        expect(boss.from, boss.id).toBe(Infinity);
+        expect(boss.attacks.length, boss.id).toBeGreaterThan(0);
+      }
+      expect(ENEMY_TYPES.filter((t) => !t.boss).every((t) => t.attacks.length === 0)).toBe(true);
+    });
+
+    it('sont rapides : plus que les ennemis ordinaires les plus lents, et les attaques portent loin', () => {
+      for (const boss of BOSS_TYPES) expect(boss.speed, boss.id).toBeGreaterThanOrEqual(3);
+      expect(BOSS_CHARGE_SPEED * BOSS_CHARGE_TIME).toBeGreaterThanOrEqual(10);
+      expect(BOSS_SLAM_RADIUS).toBeGreaterThan(BOSS_TYPES[0].radius * 3);
+      expect(BOLT_SPEED * BOLT_LIFE).toBeGreaterThanOrEqual(20);
+    });
+
+    it('ont chacun leurs attaques : charge et onde de choc, ou charge et salve', () => {
+      const attacks = BOSS_TYPES.map((t) => [...t.attacks].sort().join('+'));
+      expect(attacks).toContain('charge+slam');
+      expect(attacks).toContain('charge+volley');
+    });
+
+    it('naissent avec un état de boss et leurs PV de départ, qui suivent le temps et la difficulté', () => {
+      const arena = makeArena();
+      const early = spawnBoss(arena);
+      expect(early.boss?.phase).toBe('walk');
+      expect(BOSS_TYPES[0].attacks).toContain(early.boss!.attack);
+      expect(early.maxHp).toBe(early.hp);
+      const late = arena.enemies.spawn(180, 0, 0, BOSS_TYPES[0]);
+      expect(late.hp).toBeCloseTo(early.hp * 3);
+      arena.enemies.mods = { count: 1, hp: 2, damage: 1 };
+      expect(arena.enemies.spawn(0, 0, 0, BOSS_TYPES[0]).hp).toBeCloseTo(early.hp * 2);
+      expect(arena.enemies.bossCount).toBe(3);
+    });
+
+    it('ne comptent pas les ennemis ordinaires', () => {
+      const arena = makeArena();
+      placeEnemy(arena.enemies, 5, 0);
+      expect(arena.enemies.bossCount).toBe(0);
+      spawnBoss(arena);
+      expect(arena.enemies.bossCount).toBe(1);
+    });
+
+    it('marchent vers le joueur', () => {
+      const arena = makeArena();
+      const boss = spawnBoss(arena);
+      place(boss, 15, 0);
+      boss.boss!.timer = 1e6;
+      run(arena, 0.5);
+      expect(boss.x).toBeLessThan(15 - BOSS_TYPES[0].speed * 0.5 + 0.1);
+      expect(boss.x).toBeGreaterThan(15 - BOSS_TYPES[0].speed * 0.5 - 0.1);
+    });
+
+    describe('charge', () => {
+      it('s’arrête pour viser, puis fonce tout droit dans la direction visée, avant de reprendre la marche', () => {
+        const arena = makeArena();
+        const boss = readyBoss(arena, 'charge', 18);
+        run(arena, 0.1);
+        expect(boss.boss!.phase).toBe('aim');
+        expect(boss.boss!.dirX).toBeCloseTo(-1, 1);
+
+        // Pendant la visée, le boss ne bouge pas, même si le joueur se déplace.
+        const before = { x: boss.x, z: boss.z };
+        arena.player.group.position.set(0, 0, 6);
+        run(arena, BOSS_AIM_TIME.charge - 0.2);
+        expect(boss.boss!.phase).toBe('aim');
+        expect(boss.x).toBeCloseTo(before.x, 5);
+        expect(boss.z).toBeCloseTo(before.z, 5);
+
+        // La charge file droit selon la direction figée, sans suivre le joueur déplacé.
+        run(arena, 0.2);
+        expect(boss.boss!.phase).toBe('charge');
+        const start = boss.x;
+        run(arena, 0.2);
+        expect(boss.x).toBeLessThan(start - BOSS_CHARGE_SPEED * 0.15);
+        expect(boss.z).toBeCloseTo(before.z, 1);
+
+        run(arena, BOSS_CHARGE_TIME);
+        expect(boss.boss!.phase).toBe('walk');
+        expect(boss.boss!.timer).toBeGreaterThan(BOSS_WALK_TIME - 1);
+      });
+    });
+
+    describe('onde de choc', () => {
+      it('blesse d’un coup le héros qui est dans le rayon, à la fin de la visée', () => {
+        const arena = makeArena();
+        const boss = readyBoss(arena, 'slam', 5);
+        let slams = 0;
+        arena.enemies.onSlam = (e, radius) => {
+          slams++;
+          expect(e).toBe(boss);
+          expect(radius).toBe(BOSS_SLAM_RADIUS);
+        };
+        run(arena, 0.1);
+        expect(boss.boss!.phase).toBe('aim');
+        // Pas encore de dégâts : le boss prépare son coup (le contact lui-même n'est pas en cause à 5 unités).
+        expect(arena.player.hp).toBe(arena.player.stats.maxHp);
+        run(arena, BOSS_AIM_TIME.slam);
+        expect(slams).toBe(1);
+        expect(arena.player.stats.maxHp - arena.player.hp).toBeCloseTo(BOSS_SLAM_DAMAGE, 0);
+        expect(boss.boss!.phase).toBe('walk');
+      });
+
+      it('épargne le héros qui s’est éloigné hors du rayon pendant la visée', () => {
+        const arena = makeArena();
+        const boss = readyBoss(arena, 'slam', 5);
+        run(arena, 0.1);
+        arena.player.group.position.set(-(BOSS_SLAM_RADIUS + 6), 0, 0);
+        place(boss, 5, 0);
+        run(arena, BOSS_AIM_TIME.slam);
+        expect(arena.player.hp).toBe(arena.player.stats.maxHp);
+      });
+
+      it('se change en charge si le héros est trop loin pour être touché', () => {
+        const arena = makeArena();
+        const boss = readyBoss(arena, 'slam', BOSS_SLAM_RADIUS * 4);
+        run(arena, 0.1);
+        expect(boss.boss!.phase).toBe('aim');
+        expect(boss.boss!.attack).toBe('charge');
+      });
+
+      it('suit les dégâts qui augmentent avec le temps de partie', () => {
+        const damageAt = (time: number) => {
+          const arena = makeArena();
+          const boss = readyBoss(arena, 'slam', 5);
+          for (let t = 0; t < BOSS_AIM_TIME.slam + 0.2; t += STEP) arena.enemies.update(STEP, time, arena.player);
+          expect(boss.boss!.phase).toBe('walk');
+          return arena.player.stats.maxHp - arena.player.hp;
+        };
+        expect(damageAt(300)).toBeGreaterThan(damageAt(0) * 2.5);
+      });
+    });
+
+    describe('salve de projectiles', () => {
+      const SKULL = () => BOSS_TYPES.find((t) => t.attacks.includes('volley'))!;
+
+      it('tire un éventail de projectiles vers le joueur à la fin de la visée', () => {
+        const arena = makeArena();
+        const boss = readyBoss(arena, 'volley', 18, SKULL());
+        let fired = 0;
+        arena.enemies.onFire = () => fired++;
+        run(arena, 0.1);
+        expect(arena.enemies.boltCount).toBe(0);
+        run(arena, BOSS_AIM_TIME.volley);
+        expect(fired).toBe(1);
+        expect(arena.enemies.boltCount).toBe(BOSS_VOLLEY_COUNT);
+        expect(boss.boss!.phase).toBe('walk');
+      });
+
+      it('touche le héros bien en face : un seul projectile central, pas l’éventail entier', () => {
+        const arena = makeArena();
+        readyBoss(arena, 'volley', 15, SKULL());
+        run(arena, BOSS_AIM_TIME.volley + 0.1 + 15 / BOLT_SPEED);
+        const taken = arena.player.stats.maxHp - arena.player.hp;
+        expect(taken).toBeGreaterThanOrEqual(BOLT_DAMAGE - 0.01);
+        expect(taken).toBeLessThan(BOLT_DAMAGE * 3);
+      });
+
+      it('rate le héros qui s’écarte de la ligne, et les projectiles disparaissent après leur portée', () => {
+        const arena = makeArena();
+        readyBoss(arena, 'volley', 15, SKULL());
+        run(arena, 0.1);
+        arena.player.group.position.set(0, 0, 8);
+        run(arena, BOSS_AIM_TIME.volley);
+        expect(arena.enemies.boltCount).toBe(BOSS_VOLLEY_COUNT);
+        run(arena, BOLT_LIFE + 0.05);
+        expect(arena.player.hp).toBe(arena.player.stats.maxHp);
+        expect(arena.enemies.boltCount).toBe(0);
+      });
+
+      it('vide les projectiles à la remise à zéro', () => {
+        const arena = makeArena();
+        readyBoss(arena, 'volley', 15, SKULL());
+        run(arena, 0.1 + BOSS_AIM_TIME.volley);
+        expect(arena.enemies.boltCount).toBeGreaterThan(0);
+        arena.enemies.clear();
+        expect(arena.enemies.boltCount).toBe(0);
+      });
+    });
+
+    it('enchaînent leurs attaques : une fois la première finie, une autre est prévue parmi les leurs', () => {
+      const arena = makeArena();
+      const boss = readyBoss(arena, 'slam', 5);
+      run(arena, 0.1 + BOSS_AIM_TIME.slam);
+      expect(boss.boss!.phase).toBe('walk');
+      expect(BOSS_TYPES[0].attacks).toContain(boss.boss!.attack);
+    });
+
+    it('blessent plus fort que les ennemis ordinaires, sans traverser le joueur', () => {
+      const arena = makeArena();
+      const boss = spawnBoss(arena);
+      place(boss, 2.4, 0);
+      boss.boss!.timer = 1e6;
+      run(arena, 1);
+      const taken = arena.player.stats.maxHp - arena.player.hp;
+      expect(taken).toBeGreaterThan(BOSS_TYPES[0].damage * 0.9);
+      expect(Math.hypot(boss.x, boss.z)).toBeGreaterThanOrEqual(boss.radius + arena.player.radius - 0.01);
+    });
+
+    it('restent dans les limites de l’arène même en chargeant', () => {
+      const arena = makeArena();
+      const boss = spawnBoss(arena);
+      place(boss, ARENA + 1, 0);
+      boss.boss = { phase: 'charge', attack: 'charge', timer: 5, dirX: 1, dirZ: 0 };
+      run(arena, 2);
+      expect(boss.x).toBeLessThanOrEqual(ARENA + 2.001);
+    });
+
+    it('subissent les dégâts comme les autres ennemis', () => {
+      const arena = makeArena();
+      const boss = spawnBoss(arena);
+      arena.enemies.hit(boss, 100, 1, 0);
+      expect(boss.hp).toBeCloseTo(boss.maxHp - 100);
+    });
   });
 
   it('fait apparaître les ennemis hors de l’écran et plus résistants avec le temps', () => {

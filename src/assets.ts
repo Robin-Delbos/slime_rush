@@ -27,6 +27,15 @@ const ENEMY_MODELS: Record<string, { file: string; clip: string; fit: Omit<FitOp
   bat: { file: 'bat.glb', clip: 'Flying', fit: { axis: 'x', hover: 0.5 } },
   orc: { file: 'orc.glb', clip: 'Walk', fit: { axis: 'y' } },
   skull: { file: 'skull.glb', clip: 'Walk', fit: { axis: 'y' } },
+  // Les boss réutilisent les modèles de l'orc et du crâne, en grand et teintés.
+  'boss-orc': { file: 'orc.glb', clip: 'Walk', fit: { axis: 'y' } },
+  'boss-skull': { file: 'skull.glb', clip: 'Walk', fit: { axis: 'y' } },
+};
+
+/** Teinte multipliée aux couleurs du modèle (blanc = inchangé). */
+const ENEMY_TINTS: Record<string, [number, number, number]> = {
+  'boss-orc': [1.9, 0.55, 0.5],
+  'boss-skull': [1.0, 0.55, 1.8],
 };
 
 /** Nom court d'un clip : "CharacterArmature|Robot_Idle" -> "Idle". */
@@ -52,7 +61,8 @@ async function loadEnemy(loader: GLTFLoader, id: string): Promise<EnemyVisuals[s
 
   const material = toonMaterial(0xffffff);
   material.vertexColors = true;
-  return { frames, material, tint: new THREE.Color(1, 1, 1) };
+  const [r, g, b] = ENEMY_TINTS[id] ?? [1, 1, 1];
+  return { frames, material, tint: new THREE.Color(r, g, b) };
 }
 
 async function loadHero(loader: GLTFLoader, file: string): Promise<HeroAsset> {

@@ -11,7 +11,9 @@ export type SoundName =
   | 'buy'
   | 'deny'
   | 'ready'
-  | 'special';
+  | 'special'
+  | 'boss'
+  | 'legend';
 
 /** Délai minimal (s) entre deux déclenchements d'un même son, pour éviter la cacophonie. */
 const MIN_INTERVAL: Partial<Record<SoundName, number>> = {
@@ -103,6 +105,17 @@ export class Sfx {
       case 'ready':
         this.tone('triangle', 880, 880, 0.1, 0.12);
         this.tone('triangle', 1319, 1319, 0.22, 0.12, 0.1);
+        break;
+      case 'boss':
+        // Cor d'alarme grave, deux fois.
+        this.tone('sawtooth', 130, 82, 0.55, 0.22);
+        this.tone('square', 196, 110, 0.5, 0.08, 0.04);
+        this.tone('sawtooth', 130, 82, 0.55, 0.22, 0.6);
+        break;
+      case 'legend':
+        // Fanfare ascendante suivie de scintillements.
+        [523, 659, 784, 1047, 1319, 1568, 2093].forEach((f, i) => this.tone('triangle', f, f, 0.22, 0.13, i * 0.09));
+        [2093, 2637, 3136].forEach((f, i) => this.tone('sine', f, f * 1.02, 0.35, 0.06, 0.7 + i * 0.12));
         break;
       case 'special':
         // Explosion : grave qui s'effondre + claquement aigu.

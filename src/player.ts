@@ -43,6 +43,8 @@ export class Player {
   stats = baseStats();
   hp = this.stats.maxHp;
   moving = false;
+  /** Insensible aux dégâts (mode Légende). */
+  invincible = false;
   /** Passe à true quand le joueur vient d'être touché (lu puis remis à false par la partie). */
   hurt = false;
 
@@ -62,12 +64,14 @@ export class Player {
     this.stats = { ...stats };
     this.hp = this.stats.maxHp;
     this.hurt = false;
+    this.invincible = false;
     this.moving = false;
     this.group.position.set(0, 0, 0);
     this.group.rotation.y = 0;
   }
 
   takeDamage(amount: number): void {
+    if (this.invincible) return;
     this.hp = Math.max(0, this.hp - amount);
     this.hurt = true;
   }
