@@ -763,6 +763,153 @@ async function orientationScenario(page, url, device) {
   check(page.problems.length === 0, `aucune erreur ni avertissement dans la console${page.problems.length ? ' :\n' + page.problems.join('\n') : ''}`);
 }
 
+/**
+ * Profils de téléphones : iPhone (iOS, Safari) et Android (Chrome). Le navigateur réellement utilisé est toujours Chrome :
+ * on reproduit donc ce qui peut l'être (identité du navigateur, taille d'écran, densité de pixels, tactile) et les
+ * particularités d'iOS qui concernent le jeu (pas de vibration, ancien nom de l'API audio). Le rendu de WebKit lui-même
+ * ne peut pas être testé ici : ce test n'est pas un essai sur un vrai iPhone.
+ */
+const PLATFORMS = [
+  {
+    name: 'iphone-15',
+    width: 393,
+    height: 852,
+    dpr: 3,
+    platform: 'iPhone',
+    ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+    ios: true,
+  },
+  {
+    name: 'iphone-se-ancien',
+    width: 375,
+    height: 667,
+    dpr: 2,
+    platform: 'iPhone',
+    ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1',
+    ios: true,
+    // Avant iOS 14.5, seul « webkitAudioContext » existe.
+    oldAudio: true,
+  },
+  {
+    name: 'pixel-7',
+    width: 412,
+    height: 915,
+    dpr: 2.625,
+    platform: 'Linux armv81',
+    ua: 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+  },
+  {
+    name: 'galaxy-s8',
+    width: 360,
+    height: 740,
+    dpr: 3,
+    platform: 'Linux armv8l',
+    ua: 'Mozilla/5.0 (Linux; Android 9; SM-G950F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Mobile Safari/537.36',
+  },
+];
+
+/** Ce qu'iOS a de différent, injecté dans la page avant tout le reste. */
+function platformShims(platform) {
+  const lines = [];
+  // iOS n'a pas de vibration.
+  if (platform.ios) lines.push("Object.defineProperty(Navigator.prototype, 'vibrate', { value: undefined, configurable: true });");
+  if (platform.oldAudio) lines.push("window.webkitAudioContext = window.AudioContext; Object.defineProperty(window, 'AudioContext', { value: undefined, configurable: true });");
+  return lines.join('\n');
+}
+
+/**
+ * Le jeu doit fonctionner de la même façon sur iOS et sur Android : les mêmes icônes (aucun emoji dessiné par le système,
+ * pièce bien jaune), le son et la musique qui démarrent, le jeu qui se joue au doigt, les coffres.
+ */
+async function platformScenario(page, url, platform) {
+  const shot = (name) => page.screenshot(`${platform.name}-${name}`);
+  await page.send('Emulation.setUserAgentOverride', { userAgent: platform.ua, platform: platform.platform });
+  await page.send('Emulation.setDeviceMetricsOverride', { width: platform.width, height: platform.height, deviceScaleFactor: platform.dpr, mobile: true });
+  await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  const shims = platformShims(platform);
+  const shim = shims ? await page.send('Page.addScriptToEvaluateOnNewDocument', { source: shims }) : null;
+
+  await page.send('Page.navigate', { url: `${url}?debug` });
+  await page.waitFor('la page de jeu', `!!document.querySelector('#btn-start')`);
+  await page.eval('localStorage.clear()');
+  await page.send('Page.navigate', { url: `${url}?debug` });
+  await page.waitFor('le chargement des modèles', `!!window.__game && document.querySelector('#btn-start') && !document.querySelector('#btn-start').disabled`);
+  await sleep(600);
+
+  check((await page.eval('navigator.userAgent')) === platform.ua, `le navigateur se présente comme ${platform.name}`);
+  if (platform.ios) check((await page.eval("typeof navigator.vibrate")) === 'undefined', 'iOS : pas de vibration, le jeu doit s’en passer');
+  if (platform.oldAudio) check((await page.eval('typeof window.AudioContext')) === 'undefined' && (await page.eval('typeof window.webkitAudioContext')) === 'function', 'ancien iOS : seul webkitAudioContext existe');
+
+  // --- Icônes : les mêmes partout ---
+  const icons = await page.eval(`(() => {
+    const images = [...document.querySelectorAll('#app img.emoji')];
+    const raw = [...document.querySelector('#app').textContent].filter((c) => /\\p{Extended_Pictographic}/u.test(c));
+    return { count: images.length, broken: images.filter((i) => !(i.complete && i.naturalWidth > 0)).length, raw: raw.join('') };
+  })()`);
+  check(icons.count >= 8, `les icônes du menu sont des images du jeu (${icons.count})`);
+  check(icons.broken === 0, 'toutes les images d’icônes se chargent');
+  check(icons.raw === '', `aucun emoji n’est laissé au système (${icons.raw || 'aucun'})`);
+  // La pièce doit être jaune (sur iOS, l'emoji du système la rend grisâtre).
+  const coin = await page.eval(`(() => {
+    const img = document.querySelector('#menu-gold img.emoji');
+    if (!img) return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 36;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, 36, 36);
+    const data = ctx.getImageData(0, 0, 36, 36).data;
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 200) { r += data[i]; g += data[i + 1]; b += data[i + 2]; n++; }
+    return n ? { r: Math.round(r / n), g: Math.round(g / n), b: Math.round(b / n) } : null;
+  })()`);
+  check(coin && coin.r > 200 && coin.g > 140 && coin.r - coin.b > 80, `l’icône de pièce est jaune (${coin ? `rgb(${coin.r}, ${coin.g}, ${coin.b})` : 'introuvable'})`);
+  await shot('1-menu');
+
+  // --- Son et musique : démarrent au premier geste ---
+  check((await page.game()).audio.state === 'aucun', 'avant tout geste, aucun son (règle des navigateurs mobiles)');
+  await page.tapElement('#btn-shop');
+  await page.tapElement('#btn-shop-back');
+  await page.waitFor('l’audio actif', 'window.__game.state().audio.state === "running"', 5000);
+  check((await page.game()).audio.track === 'menu', 'la musique du menu démarre au premier geste');
+
+  // --- Une partie au doigt ---
+  await page.tapElement('#btn-start');
+  await page.waitFor('la partie', 'window.__game.state().state === "playing"', 5000);
+  check((await page.game()).audio.track === 'game', 'la musique de la partie remplace celle du menu');
+  const before = await page.game();
+  const origin = { x: Math.round(platform.width * 0.22), y: Math.round(platform.height * 0.7) };
+  await page.drag(origin, { x: origin.x + 90, y: origin.y }, 700);
+  check((await page.game()).x > before.x + 1, 'le joystick déplace le héros');
+  await page.eval('window.__game.setTime(119.5)');
+  await page.waitFor('un boss', 'window.__game.state().bosses >= 1', 6000);
+  check((await page.game()).audio.track === 'boss', 'la musique des boss se lance quand un boss arrive');
+  await shot('2-partie-boss');
+  await page.eval('window.__game.killBosses()');
+  await page.waitFor('la fin du boss', 'window.__game.state().bosses === 0', 4000);
+  await page.waitFor('le retour à la musique de partie', 'window.__game.state().audio.track === "game"', 4000);
+  await page.click('#overlay-levelup:not(.hidden) .card');
+  await page.tapElement('#btn-pause');
+  await page.tapElement('#btn-quit');
+  await page.tapElement('#btn-menu');
+  await page.waitFor('la musique du menu', 'window.__game.state().audio.track === "menu"', 4000);
+
+  // --- Un coffre en plein écran ---
+  await page.eval('window.__game.addGold(5000)');
+  await page.eval('window.__game.chestRandom([0.001, 0.5])');
+  await page.tapElement('#btn-chests');
+  await page.tapElement('#btn-chest-1');
+  await page.waitFor('la carte du coffre', `!!document.querySelector('#overlay-reveal .reveal-card')`, 6000);
+  await sleep(1200);
+  const card = await page.eval(`(() => { const r = document.querySelector('#overlay-reveal .reveal-card').getBoundingClientRect(); return r.left >= -1 && r.right <= innerWidth + 1 && r.top >= -1 && r.bottom <= innerHeight + 1; })()`);
+  check(card, 'la carte du coffre tient dans l’écran');
+  await shot('3-coffre');
+  await page.tapElement('#reveal-close');
+  check(!(await page.visible('#overlay-reveal')), 'le plein écran du coffre se referme');
+  check(page.problems.length === 0, `aucune erreur ni avertissement dans la console${page.problems.length ? ' :\n' + page.problems.join('\n') : ''}`);
+
+  if (shim) await page.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: shim.identifier });
+}
+
 async function main() {
   const browserPath = BROWSERS.find((p) => existsSync(p));
   if (!browserPath) throw new Error('Aucun navigateur Chromium trouvé. Indiquez son chemin dans la variable BROWSER_PATH.');
@@ -808,18 +955,27 @@ async function main() {
     await page.send('Runtime.enable');
     await page.send('Page.enable');
 
-    const onlyOrientation = process.argv.includes('--only=orientation');
-    if (!onlyOrientation) {
+    const only = (process.argv.find((a) => a.startsWith('--only=')) ?? '').slice(7);
+    if (!only) {
       for (const viewport of VIEWPORTS) {
         console.log(`\nFormat ${viewport.name} (${viewport.width}×${viewport.height})`);
         page.problems.length = 0;
         await scenario(page, url, viewport);
       }
     }
-    for (const device of DEVICES) {
-      console.log(`\nTéléphone ${device.name} (${device.width}×${device.height}), puis pivoté`);
-      page.problems.length = 0;
-      await orientationScenario(page, url, device);
+    if (!only || only === 'orientation') {
+      for (const device of DEVICES) {
+        console.log(`\nTéléphone ${device.name} (${device.width}×${device.height}), puis pivoté`);
+        page.problems.length = 0;
+        await orientationScenario(page, url, device);
+      }
+    }
+    if (!only || only === 'platforms') {
+      for (const platform of PLATFORMS) {
+        console.log(`\nPlateforme ${platform.name} (${platform.width}×${platform.height}, densité ${platform.dpr})`);
+        page.problems.length = 0;
+        await platformScenario(page, url, platform);
+      }
     }
     ws.close();
     console.log(`\nTous les tests de bout en bout passent. Captures : ${outDir}`);

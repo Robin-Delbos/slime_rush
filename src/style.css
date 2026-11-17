@@ -1571,14 +1571,15 @@ h2 {
   transition: opacity 0.2s;
 }
 
+/* Il tombe en accélérant (légèrement étiré), s'écrase au sol, puis gronde de plus en plus fort. */
 .reveal-chest.tension {
   animation:
-    reveal-drop 0.55s cubic-bezier(0.3, 1.6, 0.5, 1) backwards,
-    reveal-rumble 0.085s linear 0.55s infinite alternate;
+    reveal-drop 0.5s linear backwards,
+    reveal-rumble-build 1.05s linear 0.5s forwards;
 }
 
 .reveal-chest.tension .chest-glow {
-  animation: glow-build 1.15s ease-in both;
+  animation: glow-build 1.05s ease-in 0.5s both;
 }
 
 .reveal-chest.open {
@@ -1594,18 +1595,106 @@ h2 {
 }
 
 @keyframes reveal-drop {
-  from {
+  0% {
     opacity: 0;
-    transform: translateY(-260px) scale(1.4);
+    transform: translateY(-360px) scale(1.9, 2.9);
+    filter: blur(3px) drop-shadow(0 8px 0 rgba(0, 0, 0, 0.3));
+    animation-timing-function: cubic-bezier(0.55, 0, 1, 0.55);
+  }
+  12% {
+    opacity: 1;
+  }
+  86% {
+    opacity: 1;
+    transform: translateY(0) scale(2.15, 2.6);
+    filter: blur(1px) drop-shadow(0 8px 0 rgba(0, 0, 0, 0.3));
+  }
+  93% {
+    transform: translateY(0) scale(3, 1.85);
+    filter: none;
+  }
+  100% {
+    transform: translateY(0) scale(2.3);
   }
 }
 
-@keyframes reveal-rumble {
+/* Tremblement de plus en plus ample, puis maintenu jusqu'à l'éclat. */
+@keyframes reveal-rumble-build {
+  0% {
+    transform: scale(2.300) rotate(-0.5deg) translateX(-0.5px);
+  }
+  5% {
+    transform: scale(2.304) rotate(0.74deg) translateX(0.84px);
+  }
+  10% {
+    transform: scale(2.308) rotate(-0.98deg) translateX(-1.18px);
+  }
+  15% {
+    transform: scale(2.312) rotate(1.22deg) translateX(1.52px);
+  }
+  20% {
+    transform: scale(2.316) rotate(-1.46deg) translateX(-1.86px);
+  }
+  25% {
+    transform: scale(2.320) rotate(1.7deg) translateX(2.2px);
+  }
+  30% {
+    transform: scale(2.324) rotate(-1.94deg) translateX(-2.54px);
+  }
+  35% {
+    transform: scale(2.328) rotate(2.18deg) translateX(2.88px);
+  }
+  40% {
+    transform: scale(2.332) rotate(-2.42deg) translateX(-3.22px);
+  }
+  45% {
+    transform: scale(2.336) rotate(2.66deg) translateX(3.56px);
+  }
+  50% {
+    transform: scale(2.340) rotate(-2.9deg) translateX(-3.9px);
+  }
+  55% {
+    transform: scale(2.344) rotate(3.14deg) translateX(4.24px);
+  }
+  60% {
+    transform: scale(2.348) rotate(-3.38deg) translateX(-4.58px);
+  }
+  65% {
+    transform: scale(2.352) rotate(3.62deg) translateX(4.92px);
+  }
+  70% {
+    transform: scale(2.356) rotate(-3.86deg) translateX(-5.26px);
+  }
+  75% {
+    transform: scale(2.360) rotate(4.1deg) translateX(5.6px);
+  }
+  80% {
+    transform: scale(2.364) rotate(-4.34deg) translateX(-5.94px);
+  }
+  85% {
+    transform: scale(2.368) rotate(4.58deg) translateX(6.28px);
+  }
+  90% {
+    transform: scale(2.372) rotate(-4.82deg) translateX(-6.62px);
+  }
+  95% {
+    transform: scale(2.376) rotate(5.06deg) translateX(6.96px);
+  }
+  100% {
+    transform: scale(2.380) rotate(-5.3deg) translateX(-7.3px);
+  }
+}
+
+#overlay-reveal.rumbling {
+  animation: reveal-soft-quake 0.08s linear infinite alternate;
+}
+
+@keyframes reveal-soft-quake {
   from {
-    transform: scale(2.3) rotate(-4deg) translateX(-4px);
+    transform: translate(-1.5px, 0.8px);
   }
   to {
-    transform: scale(2.4) rotate(4deg) translateX(4px);
+    transform: translate(1.5px, -0.8px);
   }
 }
 
@@ -1940,4 +2029,94 @@ h2 {
   font-size: 19px;
   padding: 10px 20px;
   white-space: nowrap;
+}
+
+/* ---------- Icônes (emojis remplacés par des images, voir src/emoji.ts) ---------- */
+
+.emoji {
+  display: inline-block;
+  width: 1.15em;
+  height: 1.15em;
+  margin: 0 0.04em;
+  vertical-align: -0.2em;
+  /* Une icône ne se sélectionne pas, ne se glisse pas et ne capte pas les appuis. */
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* ---------- Impact du coffre au sol ---------- */
+
+.reveal-impact {
+  position: absolute;
+  width: 44px;
+  height: 16px;
+  margin: -8px 0 0 -22px;
+  border: 4px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  animation: impact-ring 0.65s ease-out forwards;
+}
+
+@keyframes impact-ring {
+  from {
+    opacity: 1;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: scale(9, 5.5);
+  }
+}
+
+.reveal-dust {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  margin: -13px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(236, 224, 196, 0.95), rgba(196, 180, 144, 0) 70%);
+  animation: dust-out 0.85s ease-out forwards;
+}
+
+@keyframes dust-out {
+  from {
+    opacity: 1;
+    transform: translate(0, 0) scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) scale(2.6);
+  }
+}
+
+.reveal-leak {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4px;
+  border-radius: 50%;
+  background: #fff3a8;
+  box-shadow: 0 0 10px #ffd84d;
+  animation: leak-up 0.8s ease-out forwards;
+}
+
+@keyframes leak-up {
+  from {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(var(--dx), -140px) scale(0.2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal-impact,
+  .reveal-dust,
+  .reveal-leak,
+  #overlay-reveal.rumbling {
+    animation: none;
+  }
 }

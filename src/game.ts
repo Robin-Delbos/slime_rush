@@ -6,6 +6,7 @@ import { amuletOf } from './amulets';
 import { CHEST_PRICES, openChests, type ChestPrices } from './chests';
 import { cosmeticColor } from './cosmetics';
 import { Effects } from './effects';
+import { MusicPlayer } from './music';
 import { createFallbackHero, createModelHero, type HeroState, type HeroView } from './hero';
 import { Input } from './input';
 import {
@@ -57,6 +58,8 @@ export class Game {
   private world: World;
   private input: Input;
   private sfx = new Sfx();
+  /** Musique de fond (menu, partie, boss) : démarre au premier geste de l'utilisateur. */
+  private music = new MusicPlayer(() => this.sfx.audio);
   private effects: Effects;
   private ui: Ui;
   /** Créée une fois les modèles chargés. */
@@ -72,6 +75,7 @@ export class Game {
   private dustTimer = 0;
   private bossPoint = new THREE.Vector3();
   private legendTimer = 0;
+  private stepTimer = 0;
   /** Source de hasard des coffres (remplaçable par les tests de bout en bout). */
   private chestRandom: () => number = Math.random;
   /** Outils du mode dev (version de développement uniquement). */
@@ -82,6 +86,9 @@ export class Game {
     this.input = new Input(canvas, document.getElementById('joystick')!, document.getElementById('knob')!);
     this.effects = new Effects(this.world.scene, this.world.camera, document.getElementById('floaters')!);
     this.sfx.muted = this.save.muted;
+    this.music.setMuted(this.save.muted);
+    this.sfx.onUnlock = () => this.music.resume();
+    this.music.setTrack('menu');
     this.world.setAtmosphere(this.save.difficulty);
 
     this.ui = new Ui(this.save, {
@@ -127,7 +134,7 @@ export class Game {
       chestPrices: () => this.chestPrices(),
       onChestSound: (sound) => {
         // Plus le contenu est rare, plus le son est triomphal.
-        const names = { rumble: 'rumble', boom: 'boom', common: 'coin', rare: 'levelup', legendary: 'legend', next: 'click', recap: 'ready' } as const;
+        const names = { rumble: 'rumble', thud: 'thud', boom: 'boom', common: 'coin', rare: 'levelup', legendary: 'legend', next: 'click', recap: 'ready' } as const;
         this.sfx.play(names[sound]);
       },
       onEquipAmulet: (id, level) => {
@@ -156,6 +163,7 @@ export class Game {
       onToggleSound: () => {
         this.save.muted = !this.save.muted;
         this.sfx.muted = this.save.muted;
+        this.music.setMuted(this.save.muted);
         this.sfx.unlock();
         this.sfx.play('click');
         this.commit();
@@ -173,6 +181,8 @@ export class Game {
     this.input.onPause = () => this.togglePause();
     // Changer d'onglet ou verrouiller le téléphone met la partie en pause.
     document.addEventListener('visibilitychange', () => {
+      // Rien ne joue en arrière-plan : musique et bruitages s'arrêtent, puis reprennent au retour.
+      this.sfx.suspend(document.hidden);
       if (document.hidden && this.state === 'playing') this.togglePause();
     });
 
@@ -430,12 +440,20 @@ export class Game {
     this.updateHeroEffects(dt, run, heroState);
     this.updateBossBars(run);
     this.updateLegend(dt, run);
+    this.updateMusic(run);
     this.effects.update(dt);
     this.world.follow(player.x, player.z, dt);
     if (this.state !== 'menu') {
       this.ui.updateHud(player.hp, player.stats.maxHp, run.xp / run.xpNeeded, run.level, run.time, run.kills, run.gold, run.charge);
     }
     this.world.render();
+  }
+
+  /** Choisit la musique : menu, partie, ou boss tant qu'il y en a un ; atténuée en pause et pendant les choix. */
+  private updateMusic(run: Run): void {
+    const inGame = this.state === 'playing' || this.state === 'paused' || this.state === 'levelup' || this.state === 'dying';
+    this.music.setTrack(inGame ? (run.enemies.bossCount > 0 ? 'boss' : 'game') : 'menu');
+    this.music.setDuck(this.state === 'paused' || this.state === 'levelup' || this.state === 'dying');
   }
 
   /** Mode Légende : compte à rebours, pluie de confettis et pulsations dorées autour du héros. */
@@ -488,6 +506,12 @@ export class Game {
 
     if (this.state === 'playing') {
       if (player.moving) {
+        // Pas discrets : plus rapprochés quand le héros va plus vite.
+        this.stepTimer -= dt;
+        if (this.stepTimer <= 0) {
+          this.stepTimer = Math.min(0.5, Math.max(0.2, (0.34 * 6) / player.stats.speed));
+          this.sfx.play('step');
+        }
         this.dustTimer -= dt;
         if (this.dustTimer <= 0) {
           this.dustTimer = 0.11;
@@ -555,6 +579,7 @@ export class Game {
         style: { ...this.save.style },
         cosmetics: JSON.parse(JSON.stringify(this.save.cosmetics)) as Record<string, string[]>,
         savedWeapons: [...this.save.weapons],
+        audio: { state: this.sfx.audio?.ctx.state ?? 'aucun', track: this.music.current, wanted: this.music.wanted },
         weapon: this.save.weapon,
         weapons: this.run?.weapons.owned ?? [],
         difficulty: this.save.difficulty,

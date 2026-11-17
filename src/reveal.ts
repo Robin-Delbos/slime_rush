@@ -23,8 +23,10 @@ export type RevealAdvance = 'chest' | 'recap' | null;
 
 /** Durées (ms) des étapes. */
 export const REVEAL_TIMING = {
-  /** Tension avant l'ouverture automatique. */
-  tension: 1150,
+  /** Instant où le coffre touche le sol (impact, puis début du grondement). */
+  impact: 500,
+  /** Tension avant l'ouverture automatique : la chute, puis un grondement d'environ une seconde. */
+  tension: 1550,
   /** Éclat avant l'apparition de la carte. */
   burst: 480,
   /** Temps pendant lequel on ne peut pas encore passer la carte. */

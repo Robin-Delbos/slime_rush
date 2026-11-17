@@ -144,6 +144,7 @@ Les réglages sont conservés d'une session à l'autre, séparément de la sauve
 | `npm run test:watch` | Les mêmes, relancés à chaque modification | continu |
 | `npm run test:e2e` | Compile le jeu puis le joue dans Chrome sans fenêtre, en format PC et mobile | ~2 min |
 | `npm run test:e2e:mobile` | Joue au doigt sur quatre tailles de téléphone, à la verticale puis à l'horizontale, et fait pivoter l'appareil en pleine partie | ~1 min |
+| `npm run test:e2e:platforms` | Émule deux iPhone (dont un ancien, sans `AudioContext`) et deux Android : icônes identiques (pièce jaune, aucun emoji laissé au système), musique qui démarre au premier geste, partie au doigt, boss, coffre. Chrome fait tourner le tout : ce n'est pas un essai sur un vrai iPhone | ~1 min |
 | `npm run test:all` | Types + tests unitaires + test de bout en bout | ~2 min |
 
 À lancer avant de valider une modification : `npm test` pendant le développement, `npm run test:all` avant de considérer une fonctionnalité terminée.
@@ -178,6 +179,8 @@ Réglage à faire une seule fois sur GitHub : *Settings → Pages → Source : G
 | `index.html` | Page, HUD et écrans (menu, boutique, niveau, fin de partie) |
 | `src/main.ts` | Point d'entrée |
 | `src/game.ts` | Chef d'orchestre : relie simulation, rendu, interface, sons et sauvegarde |
+| `src/music.ts` | Musique de fond synthétisée (menu, partie, boss) : notes en données pures + lecteur Web Audio |
+| `src/emoji.ts` | Remplace les emojis du texte par des images Twemoji, pour des icônes identiques sur tous les appareils |
 | `src/run.ts` | Simulation d'une partie, sans affichage (c'est elle que les tests font tourner) |
 | `src/player.ts` | État et caractéristiques du héros |
 | `src/enemies.ts` | Types d'ennemis et de boss, apparition, déplacement, affichage instancié |
@@ -220,6 +223,8 @@ Si un modèle ne se charge pas, il est remplacé par une forme simple et le jeu 
 ## Crédits
 
 Modèles 3D de [Quaternius](https://quaternius.com/), sous licence [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (domaine public), récupérés sur [poly.pizza](https://poly.pizza/u/Quaternius) :
+
+Icônes (pièces, crâne, cadeau, etc.) : [Twemoji](https://github.com/jdecked/twemoji), graphismes sous licence [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/), copiés dans `public/emoji/`. Elles remplacent les emojis du système pour que le jeu soit identique sur iOS, Android et PC (voir `src/emoji.ts`).
 
 | Fichier | Modèle d'origine |
 |---|---|

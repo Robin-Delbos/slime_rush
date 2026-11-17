@@ -91,6 +91,9 @@ describe('Ouverture des coffres en plein écran : déroulé', () => {
     expect(REVEAL_TIMING.tension).toBeGreaterThanOrEqual(800);
     expect(REVEAL_TIMING.tension).toBeLessThanOrEqual(2000);
     expect(REVEAL_TIMING.burst).toBeLessThan(REVEAL_TIMING.tension);
+    // Le coffre touche le sol avant l'éclat, avec assez de temps pour un vrai grondement (environ une seconde).
+    expect(REVEAL_TIMING.impact).toBeGreaterThan(200);
+    expect(REVEAL_TIMING.tension - REVEAL_TIMING.impact).toBeGreaterThanOrEqual(900);
     expect(REVEAL_TIMING.admire).toBeGreaterThanOrEqual(500);
     // Trois coffres se déroulent en moins d'une dizaine de secondes, même sans toucher.
     const total = 3 * (REVEAL_TIMING.tension + REVEAL_TIMING.burst + REVEAL_TIMING.admire);

@@ -1,3 +1,5 @@
+import type { AudioHandle } from './music';
+
 export type SoundName =
   | 'shoot'
   | 'hit'
@@ -16,7 +18,9 @@ export type SoundName =
   | 'legend'
   | 'chest'
   | 'rumble'
-  | 'boom';
+  | 'boom'
+  | 'thud'
+  | 'step';
 
 /** Délai minimal (s) entre deux déclenchements d'un même son, pour éviter la cacophonie. */
 const MIN_INTERVAL: Partial<Record<SoundName, number>> = {
@@ -26,6 +30,7 @@ const MIN_INTERVAL: Partial<Record<SoundName, number>> = {
   gem: 0.04,
   coin: 0.05,
   hurt: 0.3,
+  step: 0.12,
 };
 
 /**
@@ -42,16 +47,66 @@ export class Sfx {
   private gemCombo = 0;
   private lastGem = 0;
 
+  /** Appelé à chaque geste qui active (ou réactive) l'audio : la musique s'en sert pour démarrer. */
+  onUnlock?: () => void;
+
+  /** Le système audio, une fois un geste de l'utilisateur passé (sinon null). */
+  get audio(): AudioHandle | null {
+    return this.ctx && this.master ? { ctx: this.ctx, out: this.master } : null;
+  }
+
+  /** Suspend ou reprend tout le son (onglet caché, téléphone verrouillé) : rien ne joue en arrière-plan. */
+  suspend(flag: boolean): void {
+    if (!this.ctx) return;
+    try {
+      void (flag ? this.ctx.suspend() : this.ctx.resume());
+    } catch {
+      // Contexte déjà fermé : rien à faire.
+    }
+  }
+
+  private noiseBuffer: AudioBuffer | null = null;
+
+  /**
+   * Bruit filtré dont la fréquence glisse de `from` à `to` : souffle, frottement, grondement.
+   */
+  private noise(type: BiquadFilterType, from: number, to: number, duration: number, volume: number, delay = 0): void {
+    const ctx = this.ctx!;
+    if (!this.noiseBuffer) {
+      this.noiseBuffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+      const data = this.noiseBuffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    }
+    const start = ctx.currentTime + delay;
+    const source = ctx.createBufferSource();
+    const filter = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+    source.buffer = this.noiseBuffer;
+    source.loop = true;
+    filter.type = type;
+    filter.frequency.setValueAtTime(from, start);
+    filter.frequency.exponentialRampToValueAtTime(Math.max(20, to), start + duration);
+    gain.gain.setValueAtTime(volume, start);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+    source.connect(filter).connect(gain).connect(this.master!);
+    source.start(start);
+    source.stop(start + duration + 0.02);
+  }
+
   /** À appeler depuis un clic ou un appui tactile. */
   unlock(): void {
     try {
       if (!this.ctx) {
-        this.ctx = new AudioContext();
+        // Anciens Safari (iOS) : seul « webkitAudioContext » existe.
+        const Context = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!Context) return;
+        this.ctx = new Context();
         this.master = this.ctx.createGain();
         this.master.gain.value = 0.5;
         this.master.connect(this.ctx.destination);
       }
       if (this.ctx.state === 'suspended') void this.ctx.resume();
+      this.onUnlock?.();
     } catch {
       // Pas d'audio disponible : le jeu reste muet.
       this.ctx = null;
@@ -115,10 +170,44 @@ export class Sfx {
         this.tone('square', 196, 110, 0.5, 0.08, 0.04);
         this.tone('sawtooth', 130, 82, 0.55, 0.22, 0.6);
         break;
-      case 'rumble':
-        // Grondement qui monte : le coffre est sur le point de s'ouvrir.
-        this.tone('sawtooth', 55, 140, 1.1, 0.2);
-        this.tone('triangle', 80, 240, 1.1, 0.1);
+      case 'rumble': {
+        // Grondement : un souffle grave dont le filtre s'ouvre, et une note très basse qui tremble de plus en plus vite.
+        this.noise('lowpass', 90, 520, 1.05, 0.34);
+        const ctx = this.ctx!;
+        const t = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const low = ctx.createBiquadFilter();
+        const amp = ctx.createGain();
+        const lfo = ctx.createOscillator();
+        const depth = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(42, t);
+        osc.frequency.exponentialRampToValueAtTime(96, t + 1.05);
+        low.type = 'lowpass';
+        low.frequency.value = 200;
+        amp.gain.setValueAtTime(0.0001, t);
+        amp.gain.linearRampToValueAtTime(0.3, t + 0.95);
+        amp.gain.exponentialRampToValueAtTime(0.0001, t + 1.15);
+        lfo.frequency.setValueAtTime(8, t);
+        lfo.frequency.linearRampToValueAtTime(22, t + 1.05);
+        depth.gain.value = 0.12;
+        lfo.connect(depth).connect(amp.gain);
+        osc.connect(low).connect(amp).connect(this.master!);
+        osc.start(t);
+        lfo.start(t);
+        osc.stop(t + 1.2);
+        lfo.stop(t + 1.2);
+        break;
+      }
+      case 'thud':
+        // Impact lourd : un grave qui s'effondre et un souffle sourd.
+        this.tone('sine', 150, 28, 0.42, 0.5);
+        this.noise('lowpass', 1000, 120, 0.3, 0.45);
+        break;
+      case 'step':
+        // Pas discret : un frottement bref et un toc très léger, un peu différent à chaque fois.
+        this.noise('bandpass', 700 + Math.random() * 500, 320, 0.06, 0.06);
+        this.tone('sine', 100 + Math.random() * 25, 55, 0.05, 0.035);
         break;
       case 'boom':
         // Éclat : un grave qui s'effondre, un claquement, puis quelques notes brillantes.

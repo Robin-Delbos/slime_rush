@@ -69,8 +69,8 @@ export interface UiHandlers {
   onSelectCosmetic(category: CosmeticCategory, id: string): void;
   /** Prix actuels des coffres (ceux du jeu, ou ceux du mode dev). */
   chestPrices(): ChestPrices;
-  /** Un son de l'ouverture des coffres (tension, éclat, rareté du contenu, suite, récapitulatif). */
-  onChestSound(sound: 'rumble' | 'boom' | 'common' | 'rare' | 'legendary' | 'next' | 'recap'): void;
+  /** Un son de l'ouverture des coffres (impact, grondement, éclat, rareté du contenu, suite, récapitulatif). */
+  onChestSound(sound: 'rumble' | 'thud' | 'boom' | 'common' | 'rare' | 'legendary' | 'next' | 'recap'): void;
   onBuy(id: string): void;
   onToggleSound(): void;
   /** Remplacement de la progression par une sauvegarde importée, déjà validée. */
@@ -135,6 +135,8 @@ export class Ui {
   private pendingImport: SaveData | null = null;
   /** Animation de l'or du bilan de fin de partie en cours. */
   private rewardFrame = 0;
+  /** Dernier texte écrit dans chaque élément du HUD (voir setText). */
+  private shownText = new Map<HTMLElement, string>();
 
   constructor(
     private save: SaveData,
@@ -519,6 +521,7 @@ private clearChestTimers(): void {
    */
   private startReveal(rewards: ChestReward[]): void {
     this.clearChestTimers();
+    this.reveal.classList.remove('quake', 'rumbling');
     el('reveal-fx').replaceChildren();
     this.revealRewards = rewards;
     this.revealFlow = new RevealFlow(rewards.length);
@@ -537,9 +540,59 @@ private clearChestTimers(): void {
     const chest = make('div', 'reveal-chest tension');
     chest.innerHTML = CHEST_ART;
     this.revealStage.replaceChildren(chest);
-    this.handlers.onChestSound('rumble');
-    this.vibrate([30, 60, 30]);
+    // Il tombe d'abord en silence, puis touche le sol : impact, poussière, et le grondement commence.
+    this.later(REVEAL_TIMING.impact, () => this.chestImpact());
     this.later(REVEAL_TIMING.tension, () => this.burstReveal());
+  }
+
+  /**
+   * Le coffre touche le sol : choc sourd, onde de choc et poussière à sa base, écran qui tressaute ; puis le grondement
+   * commence (tremblement de l'écran, étincelles qui s'échappent du couvercle) et dure jusqu'à l'éclat.
+   */
+  private chestImpact(): void {
+    const chest = this.revealStage.querySelector<HTMLElement>('.reveal-chest');
+    if (!chest || this.revealFlow?.phase !== 'tension') return;
+    const rect = chest.getBoundingClientRect();
+    const fx = el('reveal-fx');
+    const baseX = rect.left + rect.width / 2;
+    const baseY = rect.bottom - 10;
+
+    const ring = make('span', 'reveal-impact');
+    ring.style.left = `${baseX}px`;
+    ring.style.top = `${baseY}px`;
+    fx.append(ring);
+    this.later(700, () => ring.remove());
+    for (let i = 0; i < 14; i++) {
+      const side = i % 2 === 0 ? -1 : 1;
+      const dust = make('span', 'reveal-dust');
+      dust.style.left = `${baseX}px`;
+      dust.style.top = `${baseY}px`;
+      dust.style.setProperty('--dx', `${side * (50 + Math.random() * 130)}px`);
+      dust.style.setProperty('--dy', `${-(8 + Math.random() * 34)}px`);
+      fx.append(dust);
+      this.later(900, () => dust.remove());
+    }
+
+    this.handlers.onChestSound('thud');
+    this.handlers.onChestSound('rumble');
+    this.vibrate([90, 50, 40, 40, 40, 40, 40]);
+    // Une secousse franche à l'impact, puis un tremblement continu pendant le grondement.
+    this.reveal.classList.add('quake');
+    this.later(420, () => {
+      this.reveal.classList.remove('quake');
+      this.reveal.classList.add('rumbling');
+    });
+    // Des étincelles s'échappent du couvercle de plus en plus vite.
+    for (let k = 0; k < 9; k++) {
+      this.later(150 + k * 110, () => {
+        const spark = make('span', 'reveal-leak');
+        spark.style.left = `${baseX + (Math.random() - 0.5) * rect.width * 0.6}px`;
+        spark.style.top = `${rect.top + rect.height * 0.3}px`;
+        spark.style.setProperty('--dx', `${(Math.random() - 0.5) * 60}px`);
+        fx.append(spark);
+        this.later(800, () => spark.remove());
+      });
+    }
   }
 
   /** L'éclat : le couvercle saute, flash et secousse d'écran, puis la carte arrive. */
@@ -552,6 +605,7 @@ private clearChestTimers(): void {
     const chest = this.revealStage.querySelector('.reveal-chest');
     chest?.classList.remove('tension');
     chest?.classList.add('open');
+    this.reveal.classList.remove('rumbling');
     el('reveal-hint').textContent = '';
     const flash = el('reveal-flash');
     flash.className = view.tier === 'legendary' ? 'go gold' : 'go';
@@ -671,6 +725,7 @@ private clearChestTimers(): void {
 
   private closeReveal(): void {
     this.clearChestTimers();
+    this.reveal.classList.remove('quake', 'rumbling');
     el('reveal-fx').replaceChildren();
     this.revealFlow = null;
     this.reveal.classList.add('hidden');
@@ -710,6 +765,16 @@ private clearChestTimers(): void {
     this.pause.classList.toggle('hidden', !paused);
   }
 
+  /**
+   * Change un texte seulement s'il est différent. Évite de réécrire chaque image un texte qui contient un emoji
+   * (remplacé par une image) : l'image serait recréée soixante fois par seconde.
+   */
+  private setText(node: HTMLElement, text: string): void {
+    if (this.shownText.get(node) === text) return;
+    this.shownText.set(node, text);
+    node.textContent = text;
+  }
+
   updateHud(hp: number, maxHp: number, xpRatio: number, level: number, time: number, kills: number, gold: number, charge: number): void {
     const ready = charge >= 1;
     this.special.style.setProperty('--charge', `${Math.min(1, charge) * 360}deg`);
@@ -721,12 +786,12 @@ private clearChestTimers(): void {
     // La traînée claire rattrape la barre avec retard : on voit ce qu'un coup vient de coûter.
     this.hpGhost.style.width = `${hpRatio * 100}%`;
     this.hpBar.classList.toggle('low', hpRatio < 0.3);
-    this.hpLabel.textContent = `${Math.ceil(hp)} / ${maxHp}`;
+    this.setText(this.hpLabel, `${Math.ceil(hp)} / ${maxHp}`);
     this.xpFill.style.width = `${Math.min(1, xpRatio) * 100}%`;
-    this.level.textContent = `Niv. ${level}`;
-    this.timer.textContent = formatTime(time);
-    this.kills.textContent = `💀 ${kills}`;
-    this.gold.textContent = `🪙 ${Math.floor(gold)}`;
+    this.setText(this.level, `Niv. ${level}`);
+    this.setText(this.timer, formatTime(time));
+    this.setText(this.kills, `💀 ${kills}`);
+    this.setText(this.gold, `🪙 ${Math.floor(gold)}`);
   }
 
   hurtFlash(): void {
@@ -802,8 +867,15 @@ private clearChestTimers(): void {
   private countReward(node: HTMLElement, info: GameOverInfo): void {
     cancelAnimationFrame(this.rewardFrame);
     const total = this.save.gold;
-    const render = (earned: number) =>
-      (node.textContent = `🪙 +${earned}${info.multiplier !== 1 ? ` (×${info.multiplier})` : ''} (total ${total - info.reward + earned})`);
+    // Le texte est en morceaux : seuls les deux nombres changent à chaque image (l'icône de pièce reste en place).
+    const earnedNode = make('span', '');
+    const totalNode = make('span', '');
+    const bonus = info.multiplier !== 1 ? ` (×${info.multiplier})` : '';
+    node.replaceChildren(document.createTextNode('🪙 +'), earnedNode, document.createTextNode(`${bonus} (total `), totalNode, document.createTextNode(')'));
+    const render = (earned: number) => {
+      earnedNode.textContent = String(earned);
+      totalNode.textContent = String(total - info.reward + earned);
+    };
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     if (info.reward <= 0 || reduced) {
       render(info.reward);
