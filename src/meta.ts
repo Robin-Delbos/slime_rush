@@ -1,4 +1,6 @@
+import type { EnemyMods } from './enemies';
 import { baseStats, type Stats } from './player';
+import { DEFAULT_WEAPON, WEAPONS, weaponDef, type WeaponDef } from './weaponData';
 
 /** Progression conservée d'une partie à l'autre (dans le stockage local du navigateur). */
 export interface SaveData {
@@ -8,9 +10,15 @@ export interface SaveData {
   bestTime: number;
   /** Niveau acheté de chaque amélioration permanente. */
   shop: Record<string, number>;
-  /** Identifiants des personnages débloqués. */
+  /** Identifiants des apparences (personnages) débloquées. */
   unlocked: string[];
+  /** Apparence choisie. */
   selected: string;
+  /** Armes débloquées et arme de départ choisie. */
+  weapons: string[];
+  weapon: string;
+  /** Identifiant de la difficulté choisie. */
+  difficulty: string;
   muted: boolean;
 }
 
@@ -35,13 +43,14 @@ export interface ShopItem {
 export const SHOP_ITEMS: ShopItem[] = [
   { id: 'vitality', icon: '❤️', name: 'Vitalité', desc: '+10 PV max par niveau', max: 10, baseCost: 20, apply: (s, l) => (s.maxHp += 10 * l) },
   { id: 'power', icon: '💥', name: 'Puissance', desc: '+6 % de dégâts par niveau', max: 10, baseCost: 25, apply: (s, l) => (s.damage *= 1 + 0.06 * l) },
-  { id: 'haste', icon: '⚡', name: 'Célérité', desc: 'Tire 4 % plus vite par niveau', max: 8, baseCost: 25, apply: (s, l) => (s.fireInterval *= 0.96 ** l) },
+  { id: 'haste', icon: '⚡', name: 'Célérité', desc: 'Armes 4 % plus rapides par niveau', max: 8, baseCost: 25, apply: (s, l) => (s.cooldown *= 0.96 ** l) },
   { id: 'swift', icon: '👟', name: 'Agilité', desc: '+3 % de vitesse par niveau', max: 5, baseCost: 30, apply: (s, l) => (s.speed *= 1 + 0.03 * l) },
   { id: 'magnet', icon: '🧲', name: 'Magnétisme', desc: '+12 % de portée de ramassage par niveau', max: 5, baseCost: 20, apply: (s, l) => (s.magnet *= 1 + 0.12 * l) },
   { id: 'greed', icon: '🪙', name: 'Avidité', desc: "+10 % d'or par niveau", max: 5, baseCost: 40, apply: (s, l) => (s.goldMult *= 1 + 0.1 * l) },
   { id: 'wisdom', icon: '📘', name: 'Sagesse', desc: "+6 % d'XP par niveau", max: 5, baseCost: 40, apply: (s, l) => (s.xpMult *= 1 + 0.06 * l) },
 ];
 
+/** Apparence du héros : aucun effet sur le jeu. */
 export interface Character {
   id: string;
   name: string;
@@ -49,39 +58,47 @@ export interface Character {
   /** Fichier du modèle 3D dans public/models. */
   model: string;
   cost: number;
-  apply(stats: Stats): void;
 }
 
 export const CHARACTERS: Character[] = [
-  { id: 'pip', name: 'Pip', desc: 'Équilibré', model: 'hero-pip.glb', cost: 0, apply: () => {} },
-  {
-    id: 'bolt',
-    name: 'Bolt',
-    desc: '+40 % PV, 1 orbe au départ, −10 % vitesse',
-    model: 'hero-bolt.glb',
-    cost: 150,
-    apply: (s) => {
-      s.maxHp = Math.round(s.maxHp * 1.4);
-      s.orbs += 1;
-      s.speed *= 0.9;
-    },
-  },
-  {
-    id: 'ombre',
-    name: 'Ombre',
-    desc: '+20 % vitesse, +1 projectile, −30 % PV',
-    model: 'hero-ombre.glb',
-    cost: 400,
-    apply: (s) => {
-      s.speed *= 1.2;
-      s.projectiles += 1;
-      s.maxHp = Math.round(s.maxHp * 0.7);
-    },
-  },
+  { id: 'ombre', name: 'Ombre', desc: 'Le héros d’origine', model: 'hero-ombre.glb', cost: 0 },
+  { id: 'bolt', name: 'Bolt', desc: 'Robot bricoleur', model: 'hero-bolt.glb', cost: 150 },
+  { id: 'pip', name: 'Pip', desc: 'Mascotte bondissante', model: 'hero-pip.glb', cost: 400 },
 ];
 
+export interface Difficulty {
+  id: string;
+  icon: string;
+  name: string;
+  /** Réglages appliqués aux ennemis. */
+  enemies: EnemyMods;
+  /** Multiplie l'or rapporté en fin de partie. */
+  gold: number;
+}
+
+/** Du plus doux au plus dur : plus c'est dur, plus l'or rapporté est élevé. */
+export const DIFFICULTIES: Difficulty[] = [
+  { id: 'easy', icon: '🌱', name: 'Facile', enemies: { count: 0.8, hp: 0.8, damage: 0.7 }, gold: 0.6 },
+  { id: 'normal', icon: '⚔️', name: 'Normal', enemies: { count: 1, hp: 1, damage: 1 }, gold: 1 },
+  { id: 'hard', icon: '🔥', name: 'Difficile', enemies: { count: 1.25, hp: 1.3, damage: 1.4 }, gold: 1.5 },
+  { id: 'extreme', icon: '💀', name: 'Extrême', enemies: { count: 1.5, hp: 1.7, damage: 1.8 }, gold: 2.2 },
+];
+
+export const DEFAULT_DIFFICULTY = 'normal';
+
 export function defaultSave(): SaveData {
-  return { version: 1, gold: 0, bestTime: 0, shop: {}, unlocked: ['pip'], selected: 'pip', muted: false };
+  return {
+    version: 1,
+    gold: 0,
+    bestTime: 0,
+    shop: {},
+    unlocked: ['ombre'],
+    selected: 'ombre',
+    weapons: [DEFAULT_WEAPON],
+    weapon: DEFAULT_WEAPON,
+    difficulty: DEFAULT_DIFFICULTY,
+    muted: false,
+  };
 }
 
 /** Stockage local du navigateur, ou null s'il est indisponible (navigation privée...). */
@@ -130,6 +147,13 @@ function sanitizeSave(raw: unknown): SaveData {
     }
   }
   if (typeof data.selected === 'string' && save.unlocked.includes(data.selected)) save.selected = data.selected;
+  if (Array.isArray(data.weapons)) {
+    for (const w of WEAPONS) {
+      if (data.weapons.includes(w.id) && !save.weapons.includes(w.id)) save.weapons.push(w.id);
+    }
+  }
+  if (typeof data.weapon === 'string' && save.weapons.includes(data.weapon)) save.weapon = data.weapon;
+  if (typeof data.difficulty === 'string' && DIFFICULTIES.some((d) => d.id === data.difficulty)) save.difficulty = data.difficulty;
   return save;
 }
 
@@ -198,22 +222,51 @@ export function chooseCharacter(save: SaveData, id: string): 'selected' | 'bough
   return 'bought';
 }
 
+/** Sélectionne une arme de départ, en la débloquant d'abord (contre de l'or) si elle est verrouillée. */
+export function chooseWeapon(save: SaveData, id: string): 'selected' | 'bought' | 'denied' {
+  const weapon = weaponDef(id);
+  if (!weapon) return 'denied';
+  if (save.weapons.includes(id)) {
+    save.weapon = id;
+    return 'selected';
+  }
+  if (save.gold < weapon.cost) return 'denied';
+  save.gold -= weapon.cost;
+  save.weapons.push(id);
+  save.weapon = id;
+  return 'bought';
+}
+
+export function selectedWeapon(save: SaveData): WeaponDef {
+  return weaponDef(save.weapon) ?? WEAPONS[0];
+}
+
+/** Choisit la difficulté. Renvoie false si elle n'existe pas. */
+export function chooseDifficulty(save: SaveData, id: string): boolean {
+  if (!DIFFICULTIES.some((d) => d.id === id)) return false;
+  save.difficulty = id;
+  return true;
+}
+
+export function selectedDifficulty(save: SaveData): Difficulty {
+  return DIFFICULTIES.find((d) => d.id === save.difficulty) ?? DIFFICULTIES[1];
+}
+
 export function selectedCharacter(save: SaveData): Character {
   return CHARACTERS.find((c) => c.id === save.selected) ?? CHARACTERS[0];
 }
 
-/** Caractéristiques de départ : base + améliorations permanentes + personnage choisi. */
+/** Caractéristiques de départ : base + améliorations permanentes de la boutique. */
 export function startingStats(save: SaveData): Stats {
   const stats = baseStats();
   for (const item of SHOP_ITEMS) {
     const level = save.shop[item.id] ?? 0;
     if (level > 0) item.apply(stats, level);
   }
-  selectedCharacter(save).apply(stats);
   return stats;
 }
 
-/** Or rapporté par une partie : pièces ramassées + 1 pièce par tranche de 10 s de survie. */
-export function runReward(gold: number, time: number): number {
-  return Math.floor(gold) + Math.floor(time / 10);
+/** Or rapporté par une partie : pièces ramassées + 1 pièce par tranche de 10 s de survie, multiplié selon la difficulté. */
+export function runReward(gold: number, time: number, multiplier = 1): number {
+  return Math.floor((Math.floor(gold) + Math.floor(time / 10)) * multiplier);
 }

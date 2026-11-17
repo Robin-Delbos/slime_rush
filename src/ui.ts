@@ -1,10 +1,24 @@
-import { CHARACTERS, SHOP_ITEMS, exportSave, importSave, shopCost, type SaveData } from './meta';
+import { CHARACTERS, DIFFICULTIES, SHOP_ITEMS, exportSave, importSave, shopCost, type SaveData } from './meta';
+import { countUp } from './anim';
+import { WEAPON_PREFIX } from './upgrades';
+import { WEAPONS } from './weaponData';
 import type { Upgrade } from './upgrades';
 
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
   const node = document.getElementById(id);
   if (!node) throw new Error(`Élément #${id} introuvable`);
   return node as T;
+}
+
+/**
+ * Crée l'élément d'une icône : un emoji (texte), ou un dessin SVG si la valeur commence par « <svg ».
+ * Les icônes viennent du code du jeu (jamais de l'utilisateur), l'insertion de SVG est donc sûre.
+ */
+function iconElement(className: string, icon: string): HTMLSpanElement {
+  const node = make('span', className);
+  if (icon.startsWith('<svg')) node.innerHTML = icon;
+  else node.textContent = icon;
+  return node;
 }
 
 /** Crée un élément avec une classe et un texte. */
@@ -26,6 +40,8 @@ export interface UiHandlers {
   /** Ouverture / fermeture d'un écran (pour le son de clic). */
   onNavigate(): void;
   onSelectCharacter(id: string): void;
+  onSelectWeapon(id: string): void;
+  onSelectDifficulty(id: string): void;
   onBuy(id: string): void;
   onToggleSound(): void;
   /** Remplacement de la progression par une sauvegarde importée, déjà validée. */
@@ -41,6 +57,8 @@ export interface GameOverInfo {
   kills: number;
   level: number;
   reward: number;
+  /** Multiplicateur d'or de la difficulté jouée. */
+  multiplier: number;
   isRecord: boolean;
 }
 
@@ -50,6 +68,8 @@ export class Ui {
   private xpFill = el('xp-fill');
   private level = el('level');
   private hpFill = el('hp-fill');
+  private hpGhost = el('hp-ghost');
+  private hpBar = el('hp-bar');
   private hpLabel = el('hp-label');
   private timer = el('timer');
   private kills = el('kills');
@@ -57,6 +77,7 @@ export class Ui {
   private special = el('special');
   private specialHint = el('special-hint');
   private flash = el('hit-flash');
+  private lowHp = el('low-hp');
   private start = el('overlay-start');
   private shop = el('overlay-shop');
   private levelUp = el('overlay-levelup');
@@ -70,6 +91,8 @@ export class Ui {
   private importButton = el<HTMLButtonElement>('btn-import');
   /** Sauvegarde lue dans le champ, en attente de confirmation avant d'écraser la progression. */
   private pendingImport: SaveData | null = null;
+  /** Animation de l'or du bilan de fin de partie en cours. */
+  private rewardFrame = 0;
 
   constructor(
     private save: SaveData,
@@ -220,10 +243,33 @@ export class Ui {
       const selected = save.selected === c.id;
       const card = make('button', `char-card${selected ? ' selected' : ''}${unlocked ? '' : ' locked'}`);
       card.dataset.id = c.id;
-      const status = selected ? '✔ Sélectionné' : unlocked ? 'Choisir' : `🪙 ${c.cost}`;
+      const status = selected ? '✔ Choisie' : unlocked ? 'Choisir' : `🪙 ${c.cost}`;
       card.append(make('span', 'char-name', c.name), make('span', 'char-desc', c.desc), make('span', 'char-status', status));
       card.addEventListener('click', () => this.handlers.onSelectCharacter(c.id));
       characters.append(card);
+    }
+
+    const weapons = el('weapons');
+    weapons.replaceChildren();
+    for (const w of WEAPONS) {
+      const unlocked = save.weapons.includes(w.id);
+      const selected = save.weapon === w.id;
+      const card = make('button', `weapon-card${selected ? ' selected' : ''}${unlocked ? '' : ' locked'}`);
+      card.dataset.id = w.id;
+      const status = selected ? '✔ Choisie' : unlocked ? 'Choisir' : `🪙 ${w.cost}`;
+      card.append(iconElement('weapon-icon', w.icon), make('span', 'char-name', w.name), make('span', 'char-desc', w.desc), make('span', 'char-status', status));
+      card.addEventListener('click', () => this.handlers.onSelectWeapon(w.id));
+      weapons.append(card);
+    }
+
+    const difficulty = el('difficulty');
+    difficulty.replaceChildren();
+    for (const d of DIFFICULTIES) {
+      const button = make('button', `diff-btn${save.difficulty === d.id ? ' selected' : ''}`);
+      button.dataset.id = d.id;
+      button.append(make('span', 'diff-name', `${d.icon} ${d.name}`), make('span', 'diff-gold', `🪙 ×${d.gold}`));
+      button.addEventListener('click', () => this.handlers.onSelectDifficulty(d.id));
+      difficulty.append(button);
     }
 
     const items = el('shop-items');
@@ -249,6 +295,7 @@ export class Ui {
   }
 
   showMenu(): void {
+    this.lowHp.classList.remove('active');
     this.refresh();
     for (const node of [this.hud, this.shop, this.saveScreen, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
     this.start.classList.remove('hidden');
@@ -268,7 +315,12 @@ export class Ui {
     this.special.style.setProperty('--charge', `${Math.min(1, charge) * 360}deg`);
     this.special.classList.toggle('ready', ready);
     this.specialHint.classList.toggle('hidden', !ready);
-    this.hpFill.style.width = `${(hp / maxHp) * 100}%`;
+    this.lowHp.classList.toggle('active', hp / maxHp < 0.3 && hp > 0);
+    const hpRatio = Math.max(0, Math.min(1, hp / maxHp));
+    this.hpFill.style.width = `${hpRatio * 100}%`;
+    // La traînée claire rattrape la barre avec retard : on voit ce qu'un coup vient de coûter.
+    this.hpGhost.style.width = `${hpRatio * 100}%`;
+    this.hpBar.classList.toggle('low', hpRatio < 0.3);
     this.hpLabel.textContent = `${Math.ceil(hp)} / ${maxHp}`;
     this.xpFill.style.width = `${Math.min(1, xpRatio) * 100}%`;
     this.level.textContent = `Niv. ${level}`;
@@ -283,10 +335,14 @@ export class Ui {
 
   showLevelUp(choices: { upgrade: Upgrade; level: number }[], onPick: (upgrade: Upgrade) => void): void {
     this.cards.replaceChildren();
-    for (const { upgrade, level } of choices) {
-      const card = make('button', 'card');
+    choices.forEach(({ upgrade, level }, index) => {
+      const isWeapon = upgrade.id.startsWith(WEAPON_PREFIX);
+      const card = make('button', `card ${isWeapon ? 'weapon' : 'passive'}`);
+      // Les cartes arrivent l'une après l'autre.
+      card.style.setProperty('--i', String(index));
       card.append(
-        make('span', 'card-icon', upgrade.icon),
+        make('span', 'card-tag', isWeapon ? 'Arme' : 'Bonus'),
+        iconElement('card-icon', upgrade.icon),
         make('span', 'card-name', upgrade.name),
         make('span', 'card-desc', upgrade.desc),
         make('span', 'card-level', level === 0 ? 'Nouveau !' : `Niv. ${level} → ${level + 1}`),
@@ -296,18 +352,44 @@ export class Ui {
         onPick(upgrade);
       });
       this.cards.append(card);
-    }
+    });
     this.levelUp.classList.remove('hidden');
   }
 
+  /** Fait monter l'or gagné de 0 à sa valeur, et le total avec lui. */
+  private countReward(node: HTMLElement, info: GameOverInfo): void {
+    cancelAnimationFrame(this.rewardFrame);
+    const total = this.save.gold;
+    const render = (earned: number) =>
+      (node.textContent = `🪙 +${earned}${info.multiplier !== 1 ? ` (×${info.multiplier})` : ''} (total ${total - info.reward + earned})`);
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (info.reward <= 0 || reduced) {
+      render(info.reward);
+      return;
+    }
+    render(0);
+    const DURATION = 1000;
+    const start = performance.now();
+    // Laisse l'écran de fin s'afficher avant de commencer à compter.
+    const tick = (now: number) => {
+      const t = Math.max(0, (now - start - 350) / DURATION);
+      render(countUp(0, info.reward, t));
+      if (t < 1) this.rewardFrame = requestAnimationFrame(tick);
+    };
+    this.rewardFrame = requestAnimationFrame(tick);
+  }
+
   showGameOver(info: GameOverInfo): void {
+    this.lowHp.classList.remove('active');
     const stats = el('gameover-stats');
+    const reward = make('span', 'reward');
     stats.replaceChildren(
       make('span', '', `⏱️ ${formatTime(info.time)}`),
       make('span', '', `💀 ${info.kills} ennemis`),
       make('span', '', `⭐ Niveau ${info.level}`),
-      make('span', 'reward', `🪙 +${info.reward} (total ${this.save.gold})`),
+      reward,
     );
+    this.countReward(reward, info);
     el('best-gameover').textContent = info.isRecord
       ? 'Nouveau record !'
       : `Meilleur temps : ${formatTime(this.save.bestTime)}`;

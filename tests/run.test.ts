@@ -3,7 +3,8 @@ import { MAX_ENEMIES } from '../src/enemies';
 import { baseStats } from '../src/player';
 import { resetRandom, seedRandom } from '../src/rng';
 import { SPECIAL_COST, SPECIAL_DAMAGE, SPECIAL_RADIUS, xpForLevel } from '../src/run';
-import { UPGRADES } from '../src/upgrades';
+import { PASSIVES, WEAPON_PREFIX, type Upgrade } from '../src/upgrades';
+import { WEAPONS } from '../src/weaponData';
 import { ARENA } from '../src/world';
 import { STILL, enemyType, makeRun, placeEnemy, simulate } from './helpers';
 
@@ -81,12 +82,14 @@ describe('Run : montée de niveau', () => {
     run.xp = run.xpNeeded;
     run.update(0.016, STILL);
     const choice = run.pendingChoices![0];
-    const before = JSON.stringify(run.player.stats);
+    const before = run.upgradeLevels.get(choice.id) ?? 0;
 
     run.choose(choice);
     expect(run.pendingChoices).toBeNull();
-    expect(run.upgradeLevels.get(choice.id)).toBe(1);
-    expect(JSON.stringify(run.player.stats)).not.toBe(before);
+    expect(run.upgradeLevels.get(choice.id)).toBe(before + 1);
+    if (choice.id.startsWith(WEAPON_PREFIX)) {
+      expect(run.weapons.level(choice.id.slice(WEAPON_PREFIX.length))).toBe(before + 1);
+    }
 
     const time = run.time;
     run.update(0.016, STILL);
@@ -97,10 +100,11 @@ describe('Run : montée de niveau', () => {
     const run = makeRun();
     run.xp = run.xpNeeded;
     run.update(0.016, STILL);
-    const outsider = UPGRADES.find((u) => !run.pendingChoices!.includes(u))!;
+    const outsider: Upgrade = { ...PASSIVES[0], id: 'intrus', apply: () => {} };
+    const levels = new Map(run.upgradeLevels);
     run.choose(outsider);
     expect(run.pendingChoices).not.toBeNull();
-    expect(run.upgradeLevels.size).toBe(0);
+    expect(run.upgradeLevels).toEqual(levels);
   });
 
   it('conserve le surplus d’XP et prévient par un événement', () => {
@@ -118,7 +122,8 @@ describe('Run : montée de niveau', () => {
 
   it('donne un soin quand toutes les améliorations sont au maximum', () => {
     const run = makeRun();
-    for (const u of UPGRADES) run.upgradeLevels.set(u.id, u.max);
+    for (const u of PASSIVES) run.upgradeLevels.set(u.id, u.max);
+    for (const w of WEAPONS) run.upgradeLevels.set(WEAPON_PREFIX + w.id, w.levels.length);
     run.player.hp = 50;
     run.xp = run.xpNeeded;
     run.update(0.016, STILL);
@@ -185,6 +190,94 @@ describe('Run : attaque spéciale', () => {
   });
 });
 
+describe('Run : arme de départ et difficulté', () => {
+  it('démarre avec la carabine par défaut', () => {
+    const run = makeRun();
+    expect(run.weapons.owned).toEqual(['rifle']);
+    expect(run.upgradeLevels.get('weapon:rifle')).toBe(1);
+  });
+
+  it('démarre avec l’arme choisie, et seulement celle-là', () => {
+    const run = makeRun();
+    run.reset(baseStats(), { weapon: 'spear' });
+    expect(run.weapons.owned).toEqual(['spear']);
+    expect(run.upgradeLevels.get('weapon:spear')).toBe(1);
+    placeEnemy(run.enemies, 6, 0);
+    run.update(0.1, STILL);
+    expect(run.weapons.shotCount).toBe(1);
+  });
+
+  it('ne propose en montée de niveau que les niveaux de l’arme choisie', () => {
+    seedRandom(2);
+    for (const weapon of WEAPONS) {
+      const run = makeRun();
+      run.reset(baseStats(), { weapon: weapon.id });
+      const seen = new Set<string>();
+      for (let i = 0; i < 60; i++) {
+        run.xp = run.xpNeeded;
+        run.update(0.016, STILL);
+        for (const u of run.pendingChoices ?? []) {
+          if (u.id.startsWith(WEAPON_PREFIX)) seen.add(u.id);
+        }
+        run.pendingChoices = null;
+      }
+      expect([...seen], weapon.id).toEqual([WEAPON_PREFIX + weapon.id]);
+      expect(run.weapons.owned).toEqual([weapon.id]);
+    }
+  });
+
+  it('fait monter l’arme choisie avec ses cartes, sans jamais en ajouter une autre', () => {
+    seedRandom(4);
+    const run = makeRun();
+    run.reset(baseStats(), { weapon: 'aura' });
+    for (let i = 0; i < 120; i++) {
+      run.xp = run.xpNeeded;
+      run.update(0.016, STILL);
+      const card = run.pendingChoices?.find((u) => u.id === 'weapon:aura') ?? run.pendingChoices?.[0];
+      if (card) run.choose(card);
+    }
+    expect(run.weapons.owned).toEqual(['aura']);
+    expect(run.weapons.level('aura')).toBe(WEAPONS.find((w) => w.id === 'aura')!.levels.length);
+    expect(run.upgradeLevels.get('weapon:aura')).toBe(run.weapons.level('aura'));
+  });
+
+  it('applique la difficulté aux ennemis', () => {
+    const easy = makeRun();
+    const hard = makeRun();
+    easy.reset(baseStats(), { mods: { count: 1, hp: 0.5, damage: 0.5 } });
+    hard.reset(baseStats(), { mods: { count: 1, hp: 2, damage: 2 } });
+    const a = easy.enemies.spawn(0, 0, 0, enemyType('orc'));
+    const b = hard.enemies.spawn(0, 0, 0, enemyType('orc'));
+    expect(b.hp).toBeCloseTo(a.hp * 4);
+
+    const damageAfter = (run: ReturnType<typeof makeRun>) => {
+      const e = placeEnemy(run.enemies, 0.3, 0);
+      e.hp = 1e9;
+      for (let i = 0; i < 20; i++) run.enemies.update(0.01, 0, run.player);
+      return run.player.stats.maxHp - run.player.hp;
+    };
+    expect(damageAfter(hard)).toBeCloseTo(damageAfter(easy) * 4, 0);
+  });
+
+  it('retrouve une difficulté normale après un reset sans réglage', () => {
+    const run = makeRun();
+    run.reset(baseStats(), { mods: { count: 3, hp: 3, damage: 3 } });
+    run.reset();
+    expect(run.enemies.mods).toEqual({ count: 1, hp: 1, damage: 1 });
+  });
+
+  it('fait apparaître plus d’ennemis en difficulté élevée', () => {
+    const count = (mods: { count: number; hp: number; damage: number }) => {
+      const run = makeRun();
+      run.reset(baseStats(), { mods });
+      run.player.stats.maxHp = run.player.hp = 1e9;
+      for (let i = 0; i < 600; i++) run.enemies.update(0.02, 30, run.player);
+      return run.enemies.list.length;
+    };
+    expect(count({ count: 2, hp: 1, damage: 1 })).toBeGreaterThan(count({ count: 1, hp: 1, damage: 1 }) * 1.5);
+  });
+});
+
 describe('Run : gains et remise à zéro', () => {
   it('applique les multiplicateurs d’or et d’XP', () => {
     const run = makeRun();
@@ -215,7 +308,9 @@ describe('Run : gains et remise à zéro', () => {
     expect(run.over).toBe(false);
     expect(run.enemies.list).toHaveLength(0);
     expect(run.pickups.count).toBe(0);
-    expect(run.upgradeLevels.size).toBe(0);
+    // Seule l'arme de départ est possédée.
+    expect([...run.upgradeLevels]).toEqual([['weapon:rifle', 1]]);
+    expect(run.weapons.owned).toEqual(['rifle']);
     expect(run.player.hp).toBe(150);
     expect(run.player.x).toBe(0);
   });

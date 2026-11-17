@@ -126,10 +126,17 @@ async function scenario(page, url, viewport) {
   await page.waitFor('le chargement des modèles', `!!window.__game && document.querySelector('#btn-start') && !document.querySelector('#btn-start').disabled`);
   check((await page.game()).state === 'menu', 'le jeu démarre sur le menu');
   check((await page.game()).hasModel, 'le héros a un modèle 3D');
-  check((await page.eval(`document.querySelectorAll('.char-card').length`)) === 3, 'trois personnages sont proposés');
+  check((await page.eval(`document.querySelectorAll('.char-card').length`)) === 3, 'trois apparences sont proposées');
+  check((await page.eval(`document.querySelectorAll('.weapon-card').length`)) === 4, 'quatre armes de départ sont proposées');
+  check((await page.eval(`document.querySelectorAll('.diff-btn').length`)) === 4, 'quatre difficultés sont proposées');
+  check(await page.eval(`!!document.querySelector('.weapon-card[data-id="rifle"] .weapon-icon svg')`), 'la carabine a une icône dessinée');
+  check(await page.eval(`!!document.querySelector('#overlay-start .logo svg')`), 'le menu affiche le logo');
+  check((await page.game()).weapon === 'rifle' && (await page.game()).difficulty === 'normal', 'carabine et difficulté normale par défaut');
   check(goldOf(await page.text('#menu-gold')) === 0, 'une sauvegarde neuve commence à 0 pièce');
   await page.click('.char-card[data-id="bolt"]');
-  check((await page.game()).selected === 'pip', 'sans or, un personnage payant reste verrouillé');
+  check((await page.game()).selected === 'ombre', 'sans or, une apparence payante reste verrouillée');
+  await page.click('.weapon-card[data-id="aura"]');
+  check((await page.game()).weapon === 'rifle', 'sans or, une arme payante reste verrouillée');
   await sleep(600);
   await shot('1-menu');
 
@@ -142,23 +149,41 @@ async function scenario(page, url, viewport) {
   check(goldOf(await page.text('#shop-gold')) === 480, 'un achat débite son prix');
   check((await page.text('.shop-row .shop-level')).trim() === '1 / 10', 'le niveau de l’amélioration augmente');
   await shot('2-boutique');
+
+  // --- Apparences (dans la boutique) ---
+  await page.click('.char-card[data-id="bolt"]');
+  check((await page.game()).selected === 'bolt', 'une apparence abordable est achetée et sélectionnée');
+  check(goldOf(await page.text('#shop-gold')) === 330, 'l’achat de l’apparence débite son prix');
   await page.click('#btn-shop-back');
   check(!(await page.visible('#overlay-shop')), 'la boutique se ferme');
 
-  // --- Personnages ---
-  await page.click('.char-card[data-id="bolt"]');
-  check((await page.game()).selected === 'bolt', 'un personnage abordable est acheté et sélectionné');
-  check(goldOf(await page.text('#menu-gold')) === 330, 'l’achat du personnage débite son prix');
+  // --- Armes et difficulté ---
+  await page.eval('window.__game.addGold(500)');
+  await page.click('.weapon-card[data-id="aura"]');
+  check((await page.game()).weapon === 'aura', 'une arme abordable est achetée et sélectionnée');
+  check(goldOf(await page.text('#menu-gold')) === 630, 'l’achat de l’arme débite son prix');
+  await page.click('.diff-btn[data-id="hard"]');
+  check((await page.game()).difficulty === 'hard', 'la difficulté se change');
+  await sleep(400);
+  await shot('3b-menu-difficile');
+  await page.click('.diff-btn[data-id="extreme"]');
+  await sleep(400);
+  await shot('3c-menu-extreme');
+  // Facile pour la suite du parcours : il doit survivre assez longtemps avec n'importe quelle arme.
+  await page.click('.diff-btn[data-id="easy"]');
+  check((await page.game()).difficulty === 'easy', 'la difficulté facile est sélectionnée');
   await sleep(600);
-  await shot('3-personnage');
+  await shot('3-menu-arme');
 
   // --- Partie ---
   await page.click('#btn-start');
   check((await page.game()).state === 'playing', 'la partie démarre');
+  check(JSON.stringify((await page.game()).weapons) === '["aura"]', 'la partie démarre avec l’arme choisie');
   await sleep(300);
   const maxHp = (await page.text('#hp-label')).split('/')[1].trim();
-  check(maxHp === '154', `les bonus permanents s’appliquent : 154 PV max attendus (vitalité + personnage), ${maxHp} affichés`);
+  check(maxHp === '110', `les bonus permanents s’appliquent : 110 PV max attendus (vitalité), ${maxHp} affichés`);
   let levelUps = 0;
+  let levelUpShot = false;
   // Marche en carré pendant au moins 20 s, puis jusqu'à la première montée de niveau (90 s au plus).
   const steps = ['KeyD', 'KeyW', 'KeyA', 'KeyS'];
   const started = Date.now();
@@ -167,6 +192,12 @@ async function scenario(page, url, viewport) {
     if (elapsed > 90000 || (elapsed > 20000 && levelUps >= 1)) break;
     for (let k = 0; k < 4; k++) {
       await page.key(steps[i % steps.length], 450);
+      if (!levelUpShot && (await page.visible('#overlay-levelup'))) {
+        // Laisse l'animation d'arrivée des cartes se terminer avant la capture.
+        await sleep(900);
+        await shot('4b-niveau-superieur');
+        levelUpShot = true;
+      }
       if (await page.click('#overlay-levelup:not(.hidden) .card')) levelUps++;
     }
     if (i === 5) await shot('4-partie');
@@ -213,11 +244,20 @@ async function scenario(page, url, viewport) {
   check((await page.game()).state !== 'paused', 'la touche Échap reprend la partie');
 
   // --- Fin de partie ---
+  // Une montée de niveau en attente fige la simulation : on choisit une carte tant qu'il y en a une.
+  const gameOverShown = `!document.querySelector('#overlay-gameover').classList.contains('hidden')`;
+  const deadline = Date.now() + 8000;
+  await page.click('#overlay-levelup:not(.hidden) .card');
   await page.eval('window.__game.kill()');
-  await page.waitFor('l’écran de fin', `!document.querySelector('#overlay-gameover').classList.contains('hidden')`, 6000);
+  while (!(await page.eval(gameOverShown)) && Date.now() < deadline) {
+    await page.click('#overlay-levelup:not(.hidden) .card');
+    await sleep(100);
+  }
+  await page.waitFor('l’écran de fin', gameOverShown, 1000);
   const end = await page.game();
   check(end.state === 'gameover', 'la mort du héros termine la partie');
-  check(end.gold > 330, `la partie rapporte de l’or (${end.gold - 330} pièces)`);
+  check(end.gold > 630, `la partie rapporte de l’or (${end.gold - 630} pièces)`);
+  check((await page.text('#gameover-stats')).includes('×0.6'), 'le bilan indique le multiplicateur d’or de la difficulté');
   check((await page.text('#best-gameover')).includes('record'), 'le premier temps est un record');
   await shot('6-fin');
 
@@ -229,6 +269,9 @@ async function scenario(page, url, viewport) {
   const quit = await page.game();
   check(quit.state === 'gameover' && (await page.visible('#overlay-gameover')), 'Quitter la partie affiche le bilan');
   check(quit.gold >= end.gold, 'quitter ne fait pas perdre d’or');
+  // L'or du bilan s'additionne en comptant, puis affiche le total exact.
+  await page.waitFor('le compteur d’or du bilan', `document.querySelector('#gameover-stats').textContent.includes('(total ${quit.gold})')`, 5000);
+  check(true, 'le compteur d’or du bilan atteint le total exact');
 
   // --- Retour au menu et persistance ---
   await page.click('#btn-menu');
@@ -237,6 +280,7 @@ async function scenario(page, url, viewport) {
   await page.waitFor('le rechargement', `!!window.__game && !document.querySelector('#btn-start').disabled`);
   const reloaded = await page.game();
   check(reloaded.gold === quit.gold && reloaded.selected === 'bolt', 'la progression est conservée après rechargement');
+  check(reloaded.weapon === 'aura' && reloaded.difficulty === 'easy', 'l’arme et la difficulté sont conservées après rechargement');
 
   // --- Export puis import de la sauvegarde dans un navigateur "neuf" ---
   const typeCode = (code) =>
@@ -253,7 +297,7 @@ async function scenario(page, url, viewport) {
   await page.eval('localStorage.clear()');
   await page.send('Page.navigate', { url: `${url}?debug` });
   await page.waitFor('le rechargement', `!!window.__game && !document.querySelector('#btn-start').disabled`);
-  check((await page.game()).gold === 0 && (await page.game()).selected === 'pip', 'sans sauvegarde, la progression repart de zéro');
+  check((await page.game()).gold === 0 && (await page.game()).selected === 'ombre', 'sans sauvegarde, la progression repart de zéro');
 
   await page.click('#btn-save');
   await page.click('#btn-import');
@@ -270,7 +314,8 @@ async function scenario(page, url, viewport) {
   await shot('8-sauvegarde-import');
   await page.click('#btn-import');
   const imported = await page.game();
-  check(imported.gold === quit.gold && imported.selected === 'bolt', 'la confirmation restaure l’or et le personnage');
+  check(imported.gold === quit.gold && imported.selected === 'bolt', 'la confirmation restaure l’or et l’apparence');
+  check(imported.weapon === 'aura' && imported.difficulty === 'easy', 'la confirmation restaure l’arme et la difficulté');
   await page.click('#btn-save-back');
   check(!(await page.visible('#overlay-save')), 'l’écran de sauvegarde se ferme');
   check(goldOf(await page.text('#menu-gold')) === quit.gold, 'le menu affiche l’or importé');
@@ -281,7 +326,26 @@ async function scenario(page, url, viewport) {
   await page.send('Page.navigate', { url: `${url}?debug` });
   await page.waitFor('le rechargement', `!!window.__game && !document.querySelector('#btn-start').disabled`);
   const kept = await page.game();
-  check(kept.gold === quit.gold && kept.selected === 'bolt', 'la sauvegarde importée est conservée après rechargement');
+  check(kept.gold === quit.gold && kept.selected === 'bolt' && kept.weapon === 'aura', 'la sauvegarde importée est conservée après rechargement');
+
+  // --- Chaque arme à l'écran : rendu sans erreur, arme visible, ennemis touchés ---
+  await page.eval('window.__game.addGold(1000)');
+  for (const weapon of ['rifle', 'orbs', 'aura', 'spear']) {
+    await page.click(`.weapon-card[data-id="${weapon}"]`);
+    check((await page.game()).weapon === weapon, `arme choisie : ${weapon}`);
+    await page.click('#btn-start');
+    await page.eval('window.__game.spawn(10, 5)');
+    await page.waitFor(`des ennemis tués avec l'arme ${weapon}`, 'window.__game.state().kills > 0', 15000);
+    await page.eval('window.__game.spawn(8, 6)');
+    await sleep(900);
+    await shot(`9-arme-${weapon}`);
+    check(JSON.stringify((await page.game()).weapons) === JSON.stringify([weapon]), `la partie ne contient que l'arme ${weapon}`);
+    await page.click('#overlay-levelup:not(.hidden) .card');
+    await page.click('#btn-pause');
+    await page.click('#btn-quit');
+    await page.click('#btn-menu');
+    check((await page.game()).state === 'menu', 'retour au menu après la partie de test');
+  }
 
   check(page.problems.length === 0, `aucune erreur ni avertissement dans la console${page.problems.length ? ' :\n' + page.problems.join('\n') : ''}`);
 }

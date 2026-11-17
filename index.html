@@ -16,12 +16,14 @@
       <div id="floaters"></div>
 
       <div id="hud" class="hidden">
-        <div id="xp-bar" class="bar">
+        <div id="xp-bar" class="bar xp">
           <div id="xp-fill" class="fill"></div>
           <span id="level" class="bar-label">Niv. 1</span>
         </div>
         <div id="hud-row">
-          <div id="hp-bar" class="bar">
+          <div id="hp-bar" class="bar hp">
+            <span class="bar-icon" aria-hidden="true">❤</span>
+            <div id="hp-ghost" class="fill ghost"></div>
             <div id="hp-fill" class="fill"></div>
             <span id="hp-label" class="bar-label">100</span>
           </div>
@@ -38,10 +40,58 @@
 
       <div id="joystick" class="hidden"><div id="knob"></div></div>
       <div id="hit-flash"></div>
+      <div id="low-hp"></div>
 
       <div id="overlay-start" class="overlay menu">
         <div class="menu-top">
-          <h1>Slime Rush</h1>
+          <h1 class="logo" aria-label="Slime Rush">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 350 126" role="img" aria-hidden="true">
+              <defs>
+                <linearGradient id="logo-gold" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#fff58a" />
+                  <stop offset="1" stop-color="#ffb02e" />
+                </linearGradient>
+                <linearGradient id="logo-fire" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#ffb347" />
+                  <stop offset="1" stop-color="#ff4d2e" />
+                </linearGradient>
+                <linearGradient id="logo-slime" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#a6f77a" />
+                  <stop offset="1" stop-color="#2fb84a" />
+                </linearGradient>
+              </defs>
+              <g stroke-linejoin="round" stroke-linecap="round">
+                <ellipse cx="62" cy="113" rx="52" ry="8" fill="#000" opacity="0.22" />
+                <path
+                  d="M8 106 C4 66 30 34 62 34 C74 18 84 22 80 34 C108 40 124 70 118 106 C102 116 28 118 8 106 Z"
+                  fill="url(#logo-slime)"
+                  stroke="#1c6b34"
+                  stroke-width="4"
+                />
+                <ellipse cx="38" cy="58" rx="13" ry="7" fill="#fff" opacity="0.55" transform="rotate(-28 38 58)" />
+                <circle cx="46" cy="82" r="11" fill="#fff" stroke="#1c6b34" stroke-width="3" />
+                <circle cx="80" cy="82" r="11" fill="#fff" stroke="#1c6b34" stroke-width="3" />
+                <circle cx="49" cy="85" r="5.5" fill="#1b2a2e" />
+                <circle cx="83" cy="85" r="5.5" fill="#1b2a2e" />
+                <path d="M52 101 Q63 110 74 101" fill="none" stroke="#1c6b34" stroke-width="3.5" />
+                <g
+                  font-family="'Trebuchet MS', 'Segoe UI', system-ui, sans-serif"
+                  font-weight="900"
+                  stroke="#2a2f55"
+                  stroke-width="9"
+                  paint-order="stroke"
+                >
+                  <text x="132" y="56" font-size="52" fill="url(#logo-gold)" letter-spacing="1">SLIME</text>
+                  <text x="132" y="110" font-size="56" fill="url(#logo-fire)" letter-spacing="2">RUSH</text>
+                </g>
+                <g stroke="#2a2f55" stroke-width="4" opacity="0.9">
+                  <path d="M296 80 h26" />
+                  <path d="M304 92 h24" />
+                  <path d="M296 104 h20" />
+                </g>
+              </g>
+            </svg>
+          </h1>
           <div class="menu-info">
             <span id="menu-gold" class="pill">🪙 0</span>
             <span id="best-start" class="pill">🏆 --:--</span>
@@ -50,7 +100,8 @@
           </div>
         </div>
         <div class="menu-bottom">
-          <div id="characters"></div>
+          <div id="weapons" aria-label="Arme de départ"></div>
+          <div id="difficulty" aria-label="Difficulté"></div>
           <div class="menu-actions">
             <button id="btn-shop" class="btn btn-alt">Boutique</button>
             <button id="btn-start" class="btn" disabled>Chargement…</button>
@@ -63,6 +114,9 @@
         <p class="hint">Améliorations permanentes, conservées d'une partie à l'autre</p>
         <span id="shop-gold" class="pill">🪙 0</span>
         <div id="shop-items"></div>
+        <h3 class="section-title">Apparences</h3>
+        <p class="hint">Change l’aspect du héros, sans effet sur le jeu</p>
+        <div id="characters"></div>
         <button id="btn-shop-back" class="btn btn-alt">Retour</button>
       </div>
 

@@ -30,13 +30,13 @@ type TypeDef = Omit<EnemyType, 'index' | 'color'> & { color: number };
 
 const DEFS: TypeDef[] = [
   // Slime : l'ennemi de base.
-  { id: 'slime', color: 0x4fd66b, radius: 0.5, size: 1.0, hp: 8, speed: 2.2, damage: 6, xp: 1, coinChance: 0.18, coinValue: 1, from: 0, weight: 10, animSpeed: 1.3 },
+  { id: 'slime', color: 0x4fd66b, radius: 0.5, size: 1.0, hp: 8, speed: 2.2, damage: 9, xp: 1, coinChance: 0.18, coinValue: 1, from: 0, weight: 10, animSpeed: 1.3 },
   // Chauve-souris : petite, fragile, rapide.
-  { id: 'bat', color: 0xb46bff, radius: 0.4, size: 1.3, hp: 5, speed: 4.1, damage: 4, xp: 1, coinChance: 0.18, coinValue: 1, from: 30, weight: 4, animSpeed: 2.2 },
+  { id: 'bat', color: 0xb46bff, radius: 0.4, size: 1.3, hp: 5, speed: 4.1, damage: 6, xp: 1, coinChance: 0.18, coinValue: 1, from: 30, weight: 4, animSpeed: 2.2 },
   // Orc : gros sac à PV qui lâche une grosse gemme et toujours des pièces.
-  { id: 'orc', color: 0x6fae4a, radius: 0.95, size: 2.3, hp: 70, speed: 1.6, damage: 14, xp: 6, coinChance: 1, coinValue: 5, from: 60, weight: 1, animSpeed: 1 },
+  { id: 'orc', color: 0x6fae4a, radius: 0.95, size: 2.3, hp: 70, speed: 1.6, damage: 21, xp: 6, coinChance: 1, coinValue: 5, from: 60, weight: 1, animSpeed: 1 },
   // Crâne : intermédiaire rapide et résistant.
-  { id: 'skull', color: 0xe9e4d4, radius: 0.55, size: 1.1, hp: 22, speed: 2.9, damage: 8, xp: 3, coinChance: 0.3, coinValue: 2, from: 90, weight: 3, animSpeed: 1.6 },
+  { id: 'skull', color: 0xe9e4d4, radius: 0.55, size: 1.1, hp: 22, speed: 2.9, damage: 12, xp: 3, coinChance: 0.3, coinValue: 2, from: 90, weight: 3, animSpeed: 1.6 },
 ];
 
 export const ENEMY_TYPES: EnemyType[] = DEFS.map((def, index) => ({
@@ -93,6 +93,28 @@ interface Corpse {
   age: number;
 }
 
+/**
+ * Multiplicateur des dégâts des ennemis selon le temps de partie (en secondes).
+ * Croissance régulière, puis qui s'accélère passé 3 minutes : un héros très amélioré
+ * ne peut pas rester invulnérable indéfiniment.
+ */
+export function enemyDamageScale(time: number): number {
+  const late = Math.max(0, time - 180) / 120;
+  return 1 + time / 150 + late * late;
+}
+
+/** Réglages de difficulté appliqués aux ennemis (1 = normal). */
+export interface EnemyMods {
+  /** Multiplie la cadence d'apparition. */
+  count: number;
+  /** Multiplie les PV. */
+  hp: number;
+  /** Multiplie les dégâts de contact. */
+  damage: number;
+}
+
+export const NO_MODS: EnemyMods = { count: 1, hp: 1, damage: 1 };
+
 export const MAX_ENEMIES = 300;
 const SPAWN_DISTANCE = 26;
 const DEATH_TIME = 0.22;
@@ -108,6 +130,10 @@ export class Enemies {
   private meshes: THREE.InstancedMesh[][];
   private visuals: EnemyVisual[];
   private spawnBudget = 0;
+  /** Ombre ronde sous chaque ennemi : les sépare du sol et de leurs voisins. */
+  private shadows: THREE.InstancedMesh;
+  /** Difficulté de la partie en cours. */
+  mods: EnemyMods = NO_MODS;
 
   private m = new THREE.Matrix4();
   private p = new THREE.Vector3();
@@ -130,6 +156,16 @@ export class Enemies {
         return mesh;
       }),
     );
+
+    this.shadows = new THREE.InstancedMesh(
+      new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x10240f, transparent: true, opacity: 0.38, depthWrite: false }),
+      MAX_ENEMIES,
+    );
+    this.shadows.position.y = 0.03;
+    this.shadows.count = 0;
+    this.shadows.frustumCulled = false;
+    scene.add(this.shadows);
   }
 
   clear(): void {
@@ -141,12 +177,13 @@ export class Enemies {
 
   update(dt: number, time: number, player: Player): void {
     // La cadence d'apparition augmente avec le temps de partie.
-    this.spawnBudget += dt * (0.9 + time / 22);
+    this.spawnBudget += dt * (1 + time / 16) * this.mods.count;
     while (this.spawnBudget >= 1) {
       this.spawnBudget -= 1;
       if (this.list.length < MAX_ENEMIES) this.spawn(time, player.x, player.z);
     }
 
+    const damageScale = enemyDamageScale(time) * this.mods.damage;
     const px = player.x;
     const pz = player.z;
     for (const e of this.list) {
@@ -162,7 +199,7 @@ export class Enemies {
       // ne toucherait qu'une image sur deux.
       const reach = e.radius + player.radius;
       if (d - step < reach) {
-        player.takeDamage(e.type.damage * dt);
+        player.takeDamage(e.type.damage * damageScale * dt);
         // L'ennemi reste collé au bord du joueur au lieu de le traverser.
         e.x = px - (dx / d) * reach;
         e.z = pz - (dz / d) * reach;
@@ -240,7 +277,7 @@ export class Enemies {
     const enemy: Enemy = {
       x: aroundX + Math.cos(angle) * SPAWN_DISTANCE,
       z: aroundZ + Math.sin(angle) * SPAWN_DISTANCE,
-      hp: type.hp * (1 + time / 90),
+      hp: type.hp * (1 + time / 90) * this.mods.hp,
       type,
       radius: type.radius,
       angle: 0,
@@ -274,6 +311,12 @@ export class Enemies {
     }
   }
 
+  private placeShadow(index: number, x: number, z: number, radius: number): void {
+    this.p.set(x, 0, z);
+    this.s.set(radius, 1, radius);
+    this.shadows.setMatrixAt(index, this.m.compose(this.p, this.q.identity(), this.s));
+  }
+
   /** Ajoute une instance à l'image d'animation correspondant à `cycle` (0..1). */
   private place(type: EnemyType, cycle: number, x: number, z: number, angle: number, sx: number, sy: number, color: THREE.Color): void {
     const frames = this.meshes[type.index];
@@ -290,20 +333,34 @@ export class Enemies {
   /** Recopie l'état de simulation dans les matrices d'instances. */
   private sync(time: number): void {
     for (const frames of this.meshes) for (const mesh of frames) mesh.count = 0;
+    let shadows = 0;
 
     for (const e of this.list) {
       const visual = this.visuals[e.type.index];
-      let sx = 1;
-      let sy = 1;
+      // Chaque ennemi a sa propre taille (±10 %), tirée de sa phase : la foule est moins uniforme.
+      const size = 0.92 + e.phase * 0.2;
+      let sx = size;
+      let sy = size;
       if (visual.frames.length === 1) {
         // Pas d'animation de modèle : effet "gelée" procédural.
         const squash = Math.sin(time * 7 + e.phase * 6.28) * 0.1;
-        sx = 1 - squash * 0.5;
-        sy = 1 + squash;
+        sx = size * (1 - squash * 0.5);
+        sy = size * (1 + squash);
       }
+      // Coup reçu : l'ennemi s'écrase brièvement.
+      if (e.flash > 0) {
+        sx *= 1.18;
+        sy *= 0.84;
+      }
+      this.placeShadow(shadows++, e.x, e.z, e.radius * 1.15 * size);
       const cycle = time * e.type.animSpeed + e.phase;
       this.place(e.type, cycle, e.x, e.z, e.angle, sx, sy, e.flash > 0 ? FLASH : visual.tint);
     }
+
+    this.shadows.count = shadows;
+    this.shadows.instanceMatrix.clearUpdateRanges();
+    this.shadows.instanceMatrix.addUpdateRange(0, shadows * 16);
+    this.shadows.instanceMatrix.needsUpdate = true;
 
     for (const c of this.corpses) {
       // Disparition : l'ennemi s'aplatit et rétrécit en flashant.

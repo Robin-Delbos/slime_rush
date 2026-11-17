@@ -1,14 +1,17 @@
 import type * as THREE from 'three';
-import { Enemies, type Enemy, type EnemyVisuals } from './enemies';
+import { Enemies, NO_MODS, type Enemy, type EnemyMods, type EnemyVisuals } from './enemies';
 import { Pickups, type PickupKind } from './pickups';
 import { Player, baseStats, type MoveInput, type Stats } from './player';
 import { random } from './rng';
-import { rollUpgrades, type Upgrade } from './upgrades';
+import { rollUpgrades, WEAPON_PREFIX, type Upgrade } from './upgrades';
+import { DEFAULT_WEAPON } from './weaponData';
 import { Weapons } from './weapons';
 
 /** Signaux émis par la simulation ; l'affichage s'en sert pour les sons et les effets. */
 export interface RunEvents {
-  onShoot?(): void;
+  onShoot?(weapon: string, x: number, z: number, angle: number): void;
+  /** L'aura vient de pulser. */
+  onPulse?(x: number, z: number, radius: number): void;
   onEnemyHit?(e: Enemy, damage: number): void;
   onEnemyKilled?(e: Enemy): void;
   onPickup?(kind: PickupKind, value: number): void;
@@ -18,6 +21,14 @@ export interface RunEvents {
   /** La jauge d'attaque spéciale vient de se remplir. */
   onSpecialReady?(): void;
   onSpecial?(x: number, z: number, radius: number): void;
+}
+
+/** Réglages d'une partie, en plus des caractéristiques de départ du héros. */
+export interface RunSetup {
+  /** Arme choisie : la seule de la partie. */
+  weapon?: string;
+  /** Difficulté des ennemis. */
+  mods?: EnemyMods;
 }
 
 /** Rayon de l'explosion de l'attaque spéciale. */
@@ -67,7 +78,8 @@ export class Run {
     this.weapons = new Weapons(scene);
     this.pickups = new Pickups(scene);
 
-    this.weapons.onShoot = () => this.events.onShoot?.();
+    this.weapons.onShoot = (weapon, x, z, angle) => this.events.onShoot?.(weapon, x, z, angle);
+    this.weapons.onPulse = (x, z, radius) => this.events.onPulse?.(x, z, radius);
     this.enemies.onHit = (e, damage) => this.events.onEnemyHit?.(e, damage);
     this.pickups.onPickup = (kind, value) => this.events.onPickup?.(kind, value);
   }
@@ -76,13 +88,16 @@ export class Run {
     return xpForLevel(this.level);
   }
 
-  /** Remet tout à zéro pour une nouvelle partie avec les caractéristiques de départ données. */
-  reset(stats: Stats = baseStats()): void {
+  /** Remet tout à zéro pour une nouvelle partie avec les caractéristiques de départ et les réglages donnés. */
+  reset(stats: Stats = baseStats(), setup: RunSetup = {}): void {
     this.player.reset(stats);
     this.enemies.clear();
     this.weapons.clear();
     this.pickups.clear();
     this.upgradeLevels.clear();
+    this.enemies.mods = setup.mods ?? NO_MODS;
+    const weapon = setup.weapon ?? DEFAULT_WEAPON;
+    if (this.weapons.levelUp(weapon) > 0) this.upgradeLevels.set(WEAPON_PREFIX + weapon, 1);
     this.time = 0;
     this.kills = 0;
     this.level = 1;
@@ -173,7 +188,7 @@ export class Run {
   /** Applique l'amélioration choisie et relance la partie. */
   choose(upgrade: Upgrade): void {
     if (!this.pendingChoices?.includes(upgrade)) return;
-    upgrade.apply(this.player);
+    upgrade.apply(this);
     this.upgradeLevels.set(upgrade.id, (this.upgradeLevels.get(upgrade.id) ?? 0) + 1);
     this.pendingChoices = null;
   }

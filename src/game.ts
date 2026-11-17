@@ -9,9 +9,12 @@ import {
   browserStorage,
   buyShopItem,
   chooseCharacter,
+  chooseDifficulty,
+  chooseWeapon,
   loadSave,
   persistSave,
   runReward,
+  selectedDifficulty,
   startingStats,
 } from './meta';
 import { Run } from './run';
@@ -23,6 +26,14 @@ type State = 'loading' | 'menu' | 'playing' | 'paused' | 'levelup' | 'dying' | '
 
 const LEVEL_UP_COLOR = new THREE.Color(0xffe14d);
 const SPECIAL_COLOR = new THREE.Color(0xffb13d);
+const AURA_COLOR = new THREE.Color(0xff8a3d);
+const DUST_COLOR = new THREE.Color(0xd9cfa0);
+const WHITE = new THREE.Color(0xffffff);
+/** Couleur de l'éclat de départ des projectiles de chaque arme. */
+const MUZZLE_COLORS: Record<string, THREE.Color> = {
+  rifle: new THREE.Color(0xffd84d),
+  spear: new THREE.Color(0x9fe6ff),
+};
 /** Durée de l'animation de mort du héros avant l'écran de fin. */
 const DYING_TIME = 1.3;
 
@@ -43,12 +54,16 @@ export class Game {
   private state: State = 'loading';
   private last = 0;
   private dyingTimer = 0;
+  /** Temps restant du clignotement du héros après un coup. */
+  private hurtTimer = 0;
+  private dustTimer = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.world = new World(canvas);
     this.input = new Input(canvas, document.getElementById('joystick')!, document.getElementById('knob')!);
     this.effects = new Effects(this.world.scene, this.world.camera, document.getElementById('floaters')!);
     this.sfx.muted = this.save.muted;
+    this.world.setAtmosphere(this.save.difficulty);
 
     this.ui = new Ui(this.save, {
       onPlay: () => {
@@ -70,6 +85,18 @@ export class Game {
         this.sfx.play(result === 'denied' ? 'deny' : result === 'bought' ? 'buy' : 'click');
         this.commit();
         this.applyCharacter();
+      },
+      onSelectWeapon: (id) => {
+        this.sfx.unlock();
+        const result = chooseWeapon(this.save, id);
+        this.sfx.play(result === 'denied' ? 'deny' : result === 'bought' ? 'buy' : 'click');
+        this.commit();
+      },
+      onSelectDifficulty: (id) => {
+        this.sfx.unlock();
+        this.sfx.play(chooseDifficulty(this.save, id) ? 'click' : 'deny');
+        this.world.setAtmosphere(this.save.difficulty);
+        this.commit();
       },
       onBuy: (id) => {
         this.sfx.play(buyShopItem(this.save, id) ? 'buy' : 'deny');
@@ -95,6 +122,7 @@ export class Game {
         // Le réglage du son appartient à cet appareil : il n'est pas remplacé par celui de la sauvegarde importée.
         Object.assign(this.save, data, { muted: this.save.muted });
         this.sfx.play('buy');
+        this.world.setAtmosphere(this.save.difficulty);
         this.commit();
         this.applyCharacter();
       },
@@ -121,16 +149,28 @@ export class Game {
 
     const { effects, sfx, world } = this;
     this.run = new Run(world.scene, assets.enemies, {
-      onShoot: () => sfx.play('shoot'),
+      onShoot: (weapon, x, z, angle) => {
+        sfx.play('shoot');
+        // Petit éclat devant le héros, dans la direction du tir.
+        effects.burst(x + Math.cos(angle) * 0.8, 1, z + Math.sin(angle) * 0.8, MUZZLE_COLORS[weapon] ?? WHITE, 4, 3.5, 0.1);
+      },
+      onPulse: (x, z, radius) => {
+        effects.ring(x, z, radius, AURA_COLOR, 22, 0.22);
+        effects.shockwave(x, z, radius, AURA_COLOR);
+      },
       onEnemyHit: (e, damage) => {
         sfx.play('hit');
-        effects.floater(e.x, e.z, String(Math.max(1, Math.round(damage))), 'dmg');
+        const value = Math.max(1, Math.round(damage));
+        // Les gros coups sont plus grands et plus colorés.
+        effects.floater(e.x, e.z, String(value), value >= 50 ? 'dmg big' : value >= 20 ? 'dmg mid' : 'dmg');
         effects.burst(e.x, e.radius, e.z, e.type.color, 2, 3, 0.11);
       },
       onEnemyKilled: (e) => {
         sfx.play('kill');
         const big = e.radius > 0.8;
         effects.burst(e.x, e.radius, e.z, e.type.color, big ? 20 : 8, big ? 8 : 5.5, big ? 0.24 : 0.17);
+        effects.puff(e.x, e.radius * 0.7, e.z, e.type.color, big ? 1.3 : 0.7, big ? 5 : 3);
+        effects.puff(e.x, e.radius * 0.7, e.z, WHITE, big ? 0.6 : 0.35, 2);
         if (big) world.shake(0.35);
       },
       onPickup: (kind, value) => {
@@ -139,12 +179,16 @@ export class Game {
       },
       onPlayerHurt: () => {
         sfx.play('hurt');
+        this.hurtTimer = 0.45;
         world.shake(0.3);
         this.ui.hurtFlash();
       },
       onLevelUp: () => {
         sfx.play('levelup');
-        effects.burst(this.run!.player.x, 1, this.run!.player.z, LEVEL_UP_COLOR, 26, 7, 0.2);
+        const { player } = this.run!;
+        effects.burst(player.x, 1, player.z, LEVEL_UP_COLOR, 26, 7, 0.2);
+        effects.shockwave(player.x, player.z, 3.5, LEVEL_UP_COLOR);
+        effects.ring(player.x, player.z, 1.2, LEVEL_UP_COLOR, 18, 0.2);
       },
       onSpecialReady: () => sfx.play('ready'),
       onSpecial: (x, z, radius) => {
@@ -152,6 +196,8 @@ export class Game {
         world.shake(0.7);
         effects.shockwave(x, z, radius, SPECIAL_COLOR);
         effects.burst(x, 0.5, z, SPECIAL_COLOR, 40, 11, 0.26);
+        effects.ring(x, z, radius * 0.9, SPECIAL_COLOR, 40, 0.3);
+        effects.puff(x, 0.4, z, SPECIAL_COLOR, 0.9, 6);
       },
     });
 
@@ -192,9 +238,17 @@ export class Game {
     this.view = next;
   }
 
+  /** Remet la simulation à zéro avec les choix du menu : boutique, arme de départ et difficulté. */
+  private resetRun(run: Run): void {
+    run.reset(startingStats(this.save), {
+      weapon: this.save.weapon,
+      mods: selectedDifficulty(this.save).enemies,
+    });
+  }
+
   private enterMenu(): void {
     if (!this.run) return;
-    this.run.reset(startingStats(this.save));
+    this.resetRun(this.run);
     this.effects.clear();
     this.input.release();
     this.applyCharacter();
@@ -205,7 +259,7 @@ export class Game {
 
   private startRun(): void {
     if (!this.run) return;
-    this.run.reset(startingStats(this.save));
+    this.resetRun(this.run);
     this.effects.clear();
     this.world.setMode('play');
     this.ui.showGame();
@@ -257,12 +311,32 @@ export class Game {
     else if (this.state === 'playing' && player.moving) heroState = 'run';
     this.view?.update(dt, heroState, player.stats.speed);
 
+    this.updateHeroEffects(dt, run, heroState);
     this.effects.update(dt);
     this.world.follow(player.x, player.z, dt);
     if (this.state !== 'menu') {
       this.ui.updateHud(player.hp, player.stats.maxHp, run.xp / run.xpNeeded, run.level, run.time, run.kills, run.gold, run.charge);
     }
     this.world.render();
+  }
+
+  /** Poussière sous les pas du héros et clignotement quand il est touché. */
+  private updateHeroEffects(dt: number, run: Run, heroState: HeroState): void {
+    const { player } = run;
+    const dead = heroState === 'dead';
+
+    if (this.state === 'playing') {
+      if (player.moving) {
+        this.dustTimer -= dt;
+        if (this.dustTimer <= 0) {
+          this.dustTimer = 0.11;
+          this.effects.puff(player.x, 0.1, player.z, DUST_COLOR, 0.3, 1);
+        }
+      }
+      this.hurtTimer = Math.max(0, this.hurtTimer - dt);
+    }
+    if (this.view && !dead) this.view.object.visible = this.hurtTimer <= 0 || Math.floor(this.hurtTimer * 18) % 2 === 0;
+    else if (this.view) this.view.object.visible = true;
   }
 
   private openLevelUp(run: Run, choices: Upgrade[]): void {
@@ -280,12 +354,13 @@ export class Game {
   }
 
   private finishRun(run: Run): void {
-    const reward = runReward(run.gold, run.time);
+    const multiplier = selectedDifficulty(this.save).gold;
+    const reward = runReward(run.gold, run.time, multiplier);
     const isRecord = run.time > this.save.bestTime;
     this.save.gold += reward;
     if (isRecord) this.save.bestTime = Math.floor(run.time);
     this.commit();
-    this.ui.showGameOver({ time: run.time, kills: run.kills, level: run.level, reward, isRecord });
+    this.ui.showGameOver({ time: run.time, kills: run.kills, level: run.level, reward, multiplier, isRecord });
     this.state = 'gameover';
   }
 
@@ -301,9 +376,23 @@ export class Game {
         charge: this.run?.charge ?? 0,
         gold: this.save.gold,
         selected: this.save.selected,
+        weapon: this.save.weapon,
+        weapons: this.run?.weapons.owned ?? [],
+        difficulty: this.save.difficulty,
         hasModel: this.view !== null,
       }),
       kill: () => this.run?.player.takeDamage(1e9),
+      /** Fait apparaître `count` slimes en cercle à `distance` du héros. */
+      spawn: (count: number, distance: number) => {
+        const run = this.run;
+        if (!run) return;
+        for (let i = 0; i < count; i++) {
+          const e = run.enemies.spawn(0, 0, 0);
+          const a = (i / count) * Math.PI * 2;
+          e.x = run.player.x + Math.cos(a) * distance;
+          e.z = run.player.z + Math.sin(a) * distance;
+        }
+      },
       fillSpecial: () => {
         if (this.run) this.run.charge = 1;
       },

@@ -1,10 +1,20 @@
 import * as THREE from 'three';
 import { afterEach, describe, expect, it } from 'vitest';
+import { countUp, easeOutCubic } from '../src/anim';
+import { ATMOSPHERES, DEFAULT_ATMOSPHERE, atmosphereFor } from '../src/atmosphere';
 import { bakeClip, bakePose, fitGeometries } from '../src/bake';
+import { DIFFICULTIES } from '../src/meta';
 import { Player } from '../src/player';
 import { rand, random, resetRandom, seedRandom } from '../src/rng';
 import { formatTime } from '../src/ui';
-import { UPGRADES, rollUpgrades } from '../src/upgrades';
+import {
+  PASSIVES,
+  WEAPON_PREFIX,
+  rollUpgrades,
+  weaponUpgrade,
+} from '../src/upgrades';
+import { WEAPONS, weaponDef } from '../src/weaponData';
+import { makeRun } from './helpers';
 
 afterEach(() => resetRandom());
 
@@ -38,8 +48,16 @@ describe('formatTime', () => {
 });
 
 describe('Améliorations en partie', () => {
+  const weaponIds = WEAPONS.map((w) => WEAPON_PREFIX + w.id);
+  const allMax = () =>
+    new Map<string, number>([
+      ...PASSIVES.map((u): [string, number] => [u.id, u.max]),
+      ...WEAPONS.map((w): [string, number] => [WEAPON_PREFIX + w.id, w.levels.length]),
+    ]);
+
   it('ont des identifiants uniques', () => {
-    expect(new Set(UPGRADES.map((u) => u.id)).size).toBe(UPGRADES.length);
+    const ids = [...PASSIVES.map((u) => u.id), ...weaponIds];
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('propose des améliorations distinctes', () => {
@@ -47,25 +65,128 @@ describe('Améliorations en partie', () => {
     for (let i = 0; i < 100; i++) {
       const picks = rollUpgrades(new Map(), 3);
       expect(picks).toHaveLength(3);
-      expect(new Set(picks).size).toBe(3);
+      expect(new Set(picks.map((p) => p.id)).size).toBe(3);
     }
   });
 
-  it('ne propose plus une amélioration arrivée au maximum', () => {
-    const levels = new Map(UPGRADES.map((u) => [u.id, u.max]));
+  it('ne propose plus ce qui est arrivé au maximum', () => {
+    const levels = allMax();
     expect(rollUpgrades(levels, 3)).toEqual([]);
-    levels.set('damage', 0);
-    expect(rollUpgrades(levels, 3).map((u) => u.id)).toEqual(['damage']);
+    levels.set('power', 0);
+    expect(rollUpgrades(levels, 3).map((u) => u.id)).toEqual(['power']);
+    levels.set('weapon:rifle', 5);
+    expect(rollUpgrades(levels, 3).map((u) => u.id).sort()).toEqual(['power', 'weapon:rifle']);
   });
 
-  it('modifie réellement le héros', () => {
-    for (const upgrade of UPGRADES) {
-      const player = new Player(new THREE.Scene());
-      player.hp = 50;
-      const before = JSON.stringify([player.stats, player.hp]);
-      upgrade.apply(player);
-      expect(JSON.stringify([player.stats, player.hp]), upgrade.id).not.toBe(before);
+  it('propose le niveau suivant d’une arme possédée, avec ce qu’il apporte', () => {
+    const levels = allMax();
+    levels.set('weapon:rifle', 1);
+    const [card] = rollUpgrades(levels, 3);
+    expect(card.id).toBe('weapon:rifle');
+    expect(card.desc).toBe(weaponDef('rifle')!.levels[1].desc);
+    expect(card.max).toBe(weaponDef('rifle')!.levels.length);
+  });
+
+  it('ne propose que les niveaux de l’arme portée, jamais une autre arme', () => {
+    seedRandom(11);
+    for (const weapon of WEAPONS) {
+      const levels = new Map([[WEAPON_PREFIX + weapon.id, 1]]);
+      const seen = new Set<string>();
+      for (let i = 0; i < 300; i++) {
+        for (const pick of rollUpgrades(levels, 3)) {
+          if (pick.id.startsWith(WEAPON_PREFIX)) seen.add(pick.id);
+        }
+      }
+      expect([...seen], weapon.id).toEqual([WEAPON_PREFIX + weapon.id]);
     }
+  });
+
+  it('ne propose aucune arme quand le héros n’en porte pas', () => {
+    seedRandom(5);
+    for (let i = 0; i < 200; i++) {
+      for (const pick of rollUpgrades(new Map(), 3)) expect(pick.id.startsWith(WEAPON_PREFIX)).toBe(false);
+    }
+  });
+
+  it('modifie réellement le héros ou ses armes', () => {
+    for (const upgrade of PASSIVES) {
+      const run = makeRun();
+      run.player.hp = 50;
+      const before = JSON.stringify([run.player.stats, run.player.hp]);
+      upgrade.apply(run);
+      expect(JSON.stringify([run.player.stats, run.player.hp]), upgrade.id).not.toBe(before);
+    }
+    const run = makeRun();
+    expect(run.weapons.level('aura')).toBe(0);
+    weaponUpgrade(weaponDef('aura')!, 0).apply(run);
+    expect(run.weapons.level('aura')).toBe(1);
+    weaponUpgrade(weaponDef('aura')!, 1).apply(run);
+    expect(run.weapons.level('aura')).toBe(2);
+  });
+});
+
+describe('Ambiance du ciel et de la lumière', () => {
+  it('existe pour chaque difficulté', () => {
+    for (const d of DIFFICULTIES) expect(ATMOSPHERES[d.id], d.id).toBeDefined();
+    expect(ATMOSPHERES[DEFAULT_ATMOSPHERE]).toBeDefined();
+  });
+
+  it('retombe sur l’ambiance normale pour une difficulté inconnue', () => {
+    expect(atmosphereFor('inconnue')).toBe(ATMOSPHERES.normal);
+    expect(atmosphereFor('hard')).toBe(ATMOSPHERES.hard);
+  });
+
+  it('change vraiment d’une difficulté à l’autre', () => {
+    const skies = DIFFICULTIES.map((d) => ATMOSPHERES[d.id].skyBottom);
+    expect(new Set(skies).size).toBe(DIFFICULTIES.length);
+    const suns = DIFFICULTIES.map((d) => ATMOSPHERES[d.id].sun);
+    expect(new Set(suns).size).toBe(DIFFICULTIES.length);
+  });
+
+  it('garde des couleurs valides et un éclairage suffisant pour lire le jeu', () => {
+    for (const [id, a] of Object.entries(ATMOSPHERES)) {
+      for (const color of [a.skyTop, a.skyBottom, a.fog, a.sun, a.hemiSky, a.hemiGround]) {
+        expect(Number.isInteger(color) && color >= 0 && color <= 0xffffff, id).toBe(true);
+      }
+      expect(a.sunIntensity, id).toBeGreaterThanOrEqual(1.5);
+      expect(a.hemiIntensity, id).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('s’assombrit à mesure que la difficulté monte', () => {
+    const brightness = (c: number) => ((c >> 16) & 255) + ((c >> 8) & 255) + (c & 255);
+    const tops = DIFFICULTIES.map((d) => brightness(ATMOSPHERES[d.id].skyTop));
+    expect(tops[tops.length - 1]).toBeLessThan(tops[0]);
+    const suns = DIFFICULTIES.map((d) => ATMOSPHERES[d.id].sunIntensity);
+    expect(suns[suns.length - 1]).toBeLessThan(suns[1]);
+  });
+});
+
+describe('Animations de compteur', () => {
+  it('easeOutCubic reste entre 0 et 1, monte, et borne ses entrées', () => {
+    expect(easeOutCubic(0)).toBe(0);
+    expect(easeOutCubic(1)).toBe(1);
+    expect(easeOutCubic(-3)).toBe(0);
+    expect(easeOutCubic(7)).toBe(1);
+    let previous = -1;
+    for (let t = 0; t <= 1; t += 0.05) {
+      expect(easeOutCubic(t)).toBeGreaterThanOrEqual(previous);
+      previous = easeOutCubic(t);
+    }
+  });
+
+  it('countUp part du début, finit exactement à la valeur visée et ne recule jamais', () => {
+    expect(countUp(0, 137, 0)).toBe(0);
+    expect(countUp(0, 137, 1)).toBe(137);
+    expect(countUp(0, 137, 2)).toBe(137);
+    let previous = -1;
+    for (let t = 0; t <= 1.0001; t += 0.01) {
+      const value = countUp(0, 137, t);
+      expect(Number.isInteger(value)).toBe(true);
+      expect(value).toBeGreaterThanOrEqual(previous);
+      previous = value;
+    }
+    expect(countUp(10, 10, 0.5)).toBe(10);
   });
 });
 

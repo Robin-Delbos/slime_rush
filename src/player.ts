@@ -6,16 +6,12 @@ export interface Stats {
   maxHp: number;
   speed: number;
   damage: number;
-  /** Secondes entre deux salves. */
-  fireInterval: number;
-  projectiles: number;
-  /** Nombre d'ennemis supplémentaires traversés par un projectile. */
-  pierce: number;
+  /** Multiplicateur du délai entre deux attaques de toutes les armes (plus petit = plus rapide). */
+  cooldown: number;
   /** Rayon d'attraction des gemmes et des pièces. */
   magnet: number;
   /** PV régénérés par seconde. */
   regen: number;
-  orbs: number;
   goldMult: number;
   xpMult: number;
 }
@@ -25,12 +21,9 @@ export function baseStats(): Stats {
     maxHp: 100,
     speed: 6,
     damage: 10,
-    fireInterval: 0.55,
-    projectiles: 1,
-    pierce: 0,
+    cooldown: 1,
     magnet: 2.6,
     regen: 0,
-    orbs: 0,
     goldMult: 1,
     xpMult: 1,
   };

@@ -1,21 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHARACTERS,
+  DIFFICULTIES,
   SAVE_KEY,
   SHOP_ITEMS,
   buyShopItem,
   chooseCharacter,
+  chooseDifficulty,
+  chooseWeapon,
   defaultSave,
   exportSave,
   importSave,
   loadSave,
   persistSave,
   runReward,
+  selectedDifficulty,
+  selectedWeapon,
   shopCost,
   startingStats,
   type StorageLike,
 } from '../src/meta';
 import { baseStats } from '../src/player';
+import { WEAPONS } from '../src/weaponData';
 
 function memoryStorage(initial: Record<string, string> = {}): StorageLike & { data: Record<string, string> } {
   const data = { ...initial };
@@ -40,8 +46,11 @@ describe('Sauvegarde', () => {
     save.gold = 321;
     save.bestTime = 95;
     save.shop = { vitality: 3 };
-    save.unlocked = ['pip', 'bolt'];
+    save.unlocked = ['ombre', 'bolt'];
     save.selected = 'bolt';
+    save.weapons = ['rifle', 'aura'];
+    save.weapon = 'aura';
+    save.difficulty = 'hard';
     save.muted = true;
     persistSave(storage, save);
     expect(loadSave(storage)).toEqual(save);
@@ -58,15 +67,25 @@ describe('Sauvegarde', () => {
       bestTime: 'abc',
       shop: { vitality: 999, inconnu: 4, power: -2 },
       unlocked: ['bolt', 'pirate'],
-      selected: 'ombre',
+      selected: 'pip',
     });
     const save = loadSave(memoryStorage({ [SAVE_KEY]: raw }));
     expect(save.gold).toBe(0);
     expect(save.bestTime).toBe(0);
     expect(save.shop).toEqual({ vitality: SHOP_ITEMS.find((i) => i.id === 'vitality')!.max });
-    expect(save.unlocked).toEqual(['pip', 'bolt']);
-    // 'ombre' n'est pas débloqué : on garde le personnage par défaut.
-    expect(save.selected).toBe('pip');
+    expect(save.unlocked).toEqual(['ombre', 'bolt']);
+    // 'pip' n'est pas débloqué : on garde le personnage par défaut.
+    expect(save.selected).toBe('ombre');
+  });
+
+  it('nettoie les armes et la difficulté invalides', () => {
+    const raw = JSON.stringify({ weapons: ['aura', 'bazooka'], weapon: 'spear', difficulty: 'impossible' });
+    const save = loadSave(memoryStorage({ [SAVE_KEY]: raw }));
+    expect(save.weapons).toEqual(['rifle', 'aura']);
+    // La lance n'est pas débloquée : arme et difficulté par défaut.
+    expect(save.weapon).toBe('rifle');
+    expect(save.difficulty).toBe('normal');
+    expect(loadSave(memoryStorage({ [SAVE_KEY]: JSON.stringify({ weapons: ['orbs'], weapon: 'orbs', difficulty: 'hard' }) }))).toMatchObject({ weapon: 'orbs', difficulty: 'hard' });
   });
 
   it('ne plante pas si le stockage refuse l’écriture', () => {
@@ -86,8 +105,11 @@ describe('Export et import de la sauvegarde', () => {
     save.gold = 321;
     save.bestTime = 95;
     save.shop = { vitality: 3, greed: 1 };
-    save.unlocked = ['pip', 'bolt'];
+    save.unlocked = ['ombre', 'bolt'];
     save.selected = 'bolt';
+    save.weapons = ['rifle', 'spear'];
+    save.weapon = 'spear';
+    save.difficulty = 'extreme';
     return save;
   }
 
@@ -123,19 +145,19 @@ describe('Export et import de la sauvegarde', () => {
   });
 
   it('nettoie un code modifié à la main', () => {
-    const forged = `SLIMERUSH1:${btoa(JSON.stringify({ gold: -5, shop: { vitality: 999 }, unlocked: ['pirate'], selected: 'ombre' }))}`;
+    const forged = `SLIMERUSH1:${btoa(JSON.stringify({ gold: -5, shop: { vitality: 999 }, unlocked: ['pirate'], selected: 'pip' }))}`;
     const save = importSave(forged)!;
     expect(save.gold).toBe(0);
     expect(save.shop.vitality).toBe(SHOP_ITEMS.find((i) => i.id === 'vitality')!.max);
-    expect(save.unlocked).toEqual(['pip']);
-    expect(save.selected).toBe('pip');
+    expect(save.unlocked).toEqual(['ombre']);
+    expect(save.selected).toBe('ombre');
   });
 
   it('ne modifie pas la sauvegarde exportée et renvoie une copie indépendante', () => {
     const save = richSave();
     const copy = importSave(exportSave(save))!;
     copy.shop.vitality = 9;
-    copy.unlocked.push('ombre');
+    copy.unlocked.push('pip');
     expect(save).toEqual(richSave());
   });
 });
@@ -183,14 +205,14 @@ describe('Boutique', () => {
     save.shop = { vitality: 3, haste: 2 };
     const stats = startingStats(save);
     expect(stats.maxHp).toBe(base.maxHp + 30);
-    expect(stats.fireInterval).toBeLessThan(base.fireInterval);
+    expect(stats.cooldown).toBeLessThan(base.cooldown);
   });
 });
 
 describe('Personnages', () => {
   it('a un personnage gratuit débloqué par défaut', () => {
     const free = CHARACTERS.filter((c) => c.cost === 0).map((c) => c.id);
-    expect(free).toEqual(['pip']);
+    expect(free).toEqual(['ombre']);
     expect(defaultSave().unlocked).toEqual(free);
     expect(startingStats(defaultSave())).toEqual(baseStats());
   });
@@ -200,7 +222,7 @@ describe('Personnages', () => {
     const bolt = CHARACTERS.find((c) => c.id === 'bolt')!;
     save.gold = bolt.cost - 1;
     expect(chooseCharacter(save, 'bolt')).toBe('denied');
-    expect(save.selected).toBe('pip');
+    expect(save.selected).toBe('ombre');
 
     save.gold = bolt.cost + 10;
     expect(chooseCharacter(save, 'bolt')).toBe('bought');
@@ -208,21 +230,75 @@ describe('Personnages', () => {
     expect(save.selected).toBe('bolt');
 
     // Revenir sur un personnage déjà acheté est gratuit.
-    expect(chooseCharacter(save, 'pip')).toBe('selected');
+    expect(chooseCharacter(save, 'ombre')).toBe('selected');
     expect(chooseCharacter(save, 'bolt')).toBe('selected');
     expect(save.gold).toBe(10);
-    expect(save.unlocked).toEqual(['pip', 'bolt']);
+    expect(save.unlocked).toEqual(['ombre', 'bolt']);
     expect(chooseCharacter(save, 'inconnu')).toBe('denied');
   });
 
-  it('donne à chaque personnage payant des caractéristiques différentes', () => {
+  it('ne sont qu’une apparence : aucun effet sur les caractéristiques', () => {
     const base = baseStats();
-    for (const c of CHARACTERS.filter((c) => c.cost > 0)) {
+    for (const c of CHARACTERS) {
       const save = defaultSave();
       save.unlocked.push(c.id);
       save.selected = c.id;
-      expect(startingStats(save), c.id).not.toEqual(base);
+      expect(startingStats(save), c.id).toEqual(base);
     }
+  });
+});
+
+describe('Armes de départ', () => {
+  it('a une arme gratuite débloquée par défaut', () => {
+    expect(WEAPONS.filter((w) => w.cost === 0).map((w) => w.id)).toEqual(['rifle']);
+    expect(defaultSave().weapons).toEqual(['rifle']);
+    expect(selectedWeapon(defaultSave()).id).toBe('rifle');
+  });
+
+  it('achète puis sélectionne une arme verrouillée', () => {
+    const save = defaultSave();
+    const aura = WEAPONS.find((w) => w.id === 'aura')!;
+    save.gold = aura.cost - 1;
+    expect(chooseWeapon(save, 'aura')).toBe('denied');
+    expect(save.weapon).toBe('rifle');
+
+    save.gold = aura.cost + 10;
+    expect(chooseWeapon(save, 'aura')).toBe('bought');
+    expect(save.gold).toBe(10);
+    expect(save.weapon).toBe('aura');
+
+    // Revenir sur une arme déjà débloquée est gratuit.
+    expect(chooseWeapon(save, 'rifle')).toBe('selected');
+    expect(chooseWeapon(save, 'aura')).toBe('selected');
+    expect(save.gold).toBe(10);
+    expect(save.weapons).toEqual(['rifle', 'aura']);
+    expect(chooseWeapon(save, 'inconnue')).toBe('denied');
+  });
+});
+
+describe('Difficulté', () => {
+  it('propose des niveaux de plus en plus durs et de mieux en mieux payés', () => {
+    expect(DIFFICULTIES.map((d) => d.id)).toContain('normal');
+    for (let i = 1; i < DIFFICULTIES.length; i++) {
+      const easier = DIFFICULTIES[i - 1];
+      const harder = DIFFICULTIES[i];
+      expect(harder.gold, harder.id).toBeGreaterThan(easier.gold);
+      expect(harder.enemies.hp, harder.id).toBeGreaterThan(easier.enemies.hp);
+      expect(harder.enemies.damage, harder.id).toBeGreaterThan(easier.enemies.damage);
+      expect(harder.enemies.count, harder.id).toBeGreaterThan(easier.enemies.count);
+    }
+    const normal = DIFFICULTIES.find((d) => d.id === 'normal')!;
+    expect(normal.gold).toBe(1);
+    expect(normal.enemies).toEqual({ count: 1, hp: 1, damage: 1 });
+  });
+
+  it('se choisit, et refuse une difficulté inconnue', () => {
+    const save = defaultSave();
+    expect(selectedDifficulty(save).id).toBe('normal');
+    expect(chooseDifficulty(save, 'hard')).toBe(true);
+    expect(selectedDifficulty(save).id).toBe('hard');
+    expect(chooseDifficulty(save, 'impossible')).toBe(false);
+    expect(save.difficulty).toBe('hard');
   });
 });
 
@@ -231,5 +307,12 @@ describe('Récompense de fin de partie', () => {
     expect(runReward(0, 0)).toBe(0);
     expect(runReward(12.9, 59)).toBe(12 + 5);
     expect(runReward(3, 125)).toBe(3 + 12);
+  });
+
+  it('applique le multiplicateur de la difficulté au total', () => {
+    expect(runReward(10, 60, 1.5)).toBe(24);
+    expect(runReward(10, 60, 0.6)).toBe(9);
+    expect(runReward(0, 5, 2.2)).toBe(0);
+    expect(runReward(10, 60)).toBe(runReward(10, 60, 1));
   });
 });

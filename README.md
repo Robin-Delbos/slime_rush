@@ -1,7 +1,7 @@
 # Slime Rush
 
 Jeu *survivor-like* en 3D cartoon, jouable dans le navigateur sur PC et sur mobile.
-Le héros attaque tout seul : il faut se déplacer, esquiver les ennemis, ramasser les gemmes d'XP et choisir une amélioration à chaque niveau. L'or gagné en partie sert à acheter des améliorations permanentes et de nouveaux personnages.
+Le héros attaque tout seul : il faut se déplacer, esquiver les ennemis, ramasser les gemmes d'XP et choisir une amélioration à chaque niveau. On choisit son arme de départ et sa difficulté avant la partie ; l'or gagné sert à débloquer de nouvelles armes, à acheter des améliorations permanentes et des apparences.
 
 Technologies : [Three.js](https://threejs.org/), TypeScript, [Vite](https://vite.dev/), [Vitest](https://vitest.dev/).
 
@@ -48,7 +48,7 @@ Si la page ne s'ouvre pas, le pare-feu du PC bloque probablement les connexions 
 | Attaque spéciale | Clic bref sur la zone à frapper, ou `Espace` (vise l'ennemi le plus proche) | Appui bref sur la zone à frapper |
 | Pause | `Échap` ou `P`, ou bouton ⏸ | Bouton ⏸ |
 
-Le tir de base est automatique. Les améliorations se choisissent en cliquant ou en touchant une carte.
+Les armes attaquent toutes seules. À chaque niveau, on choisit une carte en cliquant ou en touchant : niveau suivant de votre arme, ou bonus passif.
 
 **Attaque spéciale** : la jauge en bas à droite se remplit en tuant des ennemis (30 slimes, ou moins avec de gros ennemis). Quand elle brille, un appui bref sur le terrain déclenche une explosion de zone à cet endroit. Les ennemis tués par l'explosion ne rechargent pas la jauge.
 
@@ -63,11 +63,38 @@ Le tir de base est automatique. Les améliorations se choisissent en cliquant ou
 
 Le décor (herbe, cailloux, arbres) reste dans les verts et les gris : tout ce qui est coloré et lumineux au sol se ramasse.
 
+## Armes
+
+On choisit **une** arme au menu et on la garde pendant toute la partie. Chaque arme a 6 niveaux, avec ses propres améliorations : à chaque montée de niveau, les cartes proposées sont les niveaux suivants de cette arme et des bonus passifs.
+
+| Arme | Style | Prix de déblocage |
+|---|---|---|
+| Carabine | Tire sur l'ennemi le plus proche : projectiles multiples, perforation | gratuite |
+| 🔮 Gardiens | Des orbes tournent autour de vous : défense, orbite plus large | 120 🪙 |
+| 🔥 Aura ardente | Pulsations de dégâts et de recul autour de vous : combat rapproché | 200 🪙 |
+| 🔱 Lance | Transperce toute une ligne d'ennemis : gros dégâts, recharge lente | 300 🪙 |
+
+Les bonus passifs, communs à toutes les armes, sont : Force, Bottes, Cœur, Régénération, Aimant.
+
+## Difficulté
+
+Quatre niveaux au choix au menu. Plus c'est difficile, plus il y a d'ennemis, résistants et dangereux, et plus l'or rapporté en fin de partie est multiplié.
+
+| Difficulté | Ennemis (nombre / PV / dégâts) | Or |
+|---|---|---|
+| 🌱 Facile | ×0,8 / ×0,8 / ×0,7 | ×0,6 |
+| ⚔️ Normal | ×1 / ×1 / ×1 | ×1 |
+| 🔥 Difficile | ×1,25 / ×1,3 / ×1,4 | ×1,5 |
+| 💀 Extrême | ×1,5 / ×1,7 / ×1,8 | ×2,2 |
+
+Dans tous les cas, la force des ennemis augmente avec le temps de partie, et plus vite passé 3 minutes.
+
 ## Progression entre les parties
 
-- **Or** : pièces ramassées + 1 pièce par tranche de 10 secondes de survie, versées à la fin de la partie.
+- **Or** : pièces ramassées + 1 pièce par tranche de 10 secondes de survie, multipliées selon la difficulté, versées à la fin de la partie.
+- **Armes** : à débloquer avec de l'or (voir ci-dessus).
 - **Boutique** (menu principal) : sept améliorations permanentes à plusieurs niveaux.
-- **Personnages** : Pip (gratuit), Bolt (150 pièces), Ombre (400 pièces), chacun avec ses forces et faiblesses.
+- **Apparences** (dans la boutique) : Ombre (gratuit, le héros d'origine), Bolt (150 pièces), Pip (400 pièces). Elles changent l'aspect du héros, sans effet sur le jeu.
 
 La sauvegarde est stockée dans le navigateur (`localStorage`). Elle est donc propre à chaque navigateur et à chaque appareil, et disparaît si les données du site sont effacées.
 
@@ -84,9 +111,9 @@ Pour la transporter ailleurs, le bouton 💾 du menu ouvre l'écran **Sauvegarde
 
 À lancer avant de valider une modification : `npm test` pendant le développement, `npm run test:all` avant de considérer une fonctionnalité terminée.
 
-**Tests unitaires** (`tests/*.test.ts`) : ils font tourner la simulation (`src/run.ts`) sans affichage, avec un aléatoire à graine fixe pour être reproductibles. Ils couvrent le héros, les ennemis, les armes, les objets à ramasser, les montées de niveau, la boutique, les personnages, la sauvegarde et la préparation des modèles 3D.
+**Tests unitaires** (`tests/*.test.ts`) : ils font tourner la simulation (`src/run.ts`) sans affichage, avec un aléatoire à graine fixe pour être reproductibles. Ils couvrent le héros, les ennemis, les armes, les objets à ramasser, les montées de niveau, la boutique, les armes, les difficultés, les apparences, la sauvegarde et la préparation des modèles 3D.
 
-**Test de bout en bout** (`tests/e2e/run.mjs`) : il vérifie le parcours complet (menu, boutique, achat d'un personnage, partie, montée de niveau, mort, retour au menu, sauvegarde conservée après rechargement) et échoue à la moindre erreur ou au moindre avertissement dans la console. Il pilote le Chrome installé sur le poste (Edge en secours), son coupé, sans dépendance supplémentaire. Les captures d'écran de chaque étape sont écrites dans `tests/e2e/output/`. Pour utiliser un autre navigateur, indiquez son chemin dans la variable d'environnement `BROWSER_PATH`.
+**Test de bout en bout** (`tests/e2e/run.mjs`) : il vérifie le parcours complet (menu, boutique, achat d'une apparence et d'une arme, choix de la difficulté, partie, montée de niveau, mort, retour au menu, sauvegarde conservée après rechargement) et échoue à la moindre erreur ou au moindre avertissement dans la console. Il pilote le Chrome installé sur le poste (Edge en secours), son coupé, sans dépendance supplémentaire. Les captures d'écran de chaque étape sont écrites dans `tests/e2e/output/`. Pour utiliser un autre navigateur, indiquez son chemin dans la variable d'environnement `BROWSER_PATH`.
 
 Ajouter `?debug` à l'adresse du jeu expose `window.__game` (état, mort immédiate, ajout d'or), utilisé par ce test.
 
@@ -117,10 +144,11 @@ Réglage à faire une seule fois sur GitHub : *Settings → Pages → Source : G
 | `src/run.ts` | Simulation d'une partie, sans affichage (c'est elle que les tests font tourner) |
 | `src/player.ts` | État et caractéristiques du héros |
 | `src/enemies.ts` | Types d'ennemis, apparition, déplacement, affichage instancié |
-| `src/weapons.ts` | Projectiles et orbes |
+| `src/weapons.ts` | Comportement des armes (projectiles, orbes, aura, lances) |
+| `src/weaponData.ts` | Catalogue des armes : niveaux et valeurs, sans rendu |
 | `src/pickups.ts` | Gemmes d'XP et pièces |
-| `src/upgrades.ts` | Améliorations proposées en cours de partie |
-| `src/meta.ts` | Sauvegarde, boutique, personnages |
+| `src/upgrades.ts` | Cartes de montée de niveau : bonus passifs et niveaux d'armes |
+| `src/meta.ts` | Sauvegarde, boutique, armes à débloquer, apparences, difficultés |
 | `src/assets.ts` | Chargement des modèles 3D |
 | `src/bake.ts` | Conversion des animations en images fixes (voir ci-dessous) |
 | `src/hero.ts` | Modèle animé du héros |
@@ -134,9 +162,11 @@ Réglage à faire une seule fois sur GitHub : *Settings → Pages → Source : G
 
 ### Ajouter du contenu
 
-- **Amélioration en partie** : une entrée dans `UPGRADES` (`src/upgrades.ts`).
+- **Bonus passif en partie** : une entrée dans `PASSIVES` (`src/upgrades.ts`).
+- **Arme** : ses 6 niveaux dans `WEAPONS` (`src/weaponData.ts`) et son comportement dans `src/weapons.ts`. Le test « Données des armes » vérifie que chaque niveau apporte quelque chose.
+- **Difficulté** : une entrée dans `DIFFICULTIES` (`src/meta.ts`).
 - **Amélioration permanente** : une entrée dans `SHOP_ITEMS` (`src/meta.ts`).
-- **Personnage** : une entrée dans `CHARACTERS` (`src/meta.ts`) et son modèle dans `public/models/`. Le modèle doit contenir des animations nommées `Idle`, `Run` (ou `Running`) et `Death`.
+- **Apparence** : une entrée dans `CHARACTERS` (`src/meta.ts`) et son modèle dans `public/models/`. Le modèle doit contenir des animations nommées `Idle`, `Run` (ou `Running`) et `Death`.
 - **Ennemi** : une entrée dans `DEFS` (`src/enemies.ts`), et son modèle dans `ENEMY_MODELS` (`src/assets.ts`).
 
 ### Comment des centaines d'ennemis animés restent fluides
