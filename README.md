@@ -95,7 +95,15 @@ Ajouter `?debug` à l'adresse du jeu expose `window.__game` (état, mort immédi
 | `npm run build` | Vérifie les types et génère la version de production dans `dist/` |
 | `npm run preview` | Sert le contenu de `dist/` en local pour le vérifier |
 
-Le dossier `dist/` est un site statique : il peut être déposé tel quel sur un hébergeur (GitHub Pages, Netlify...).
+Le dossier `dist/` est un site statique aux chemins relatifs : il peut être déposé tel quel sur un hébergeur, à la racine ou dans un sous-dossier.
+
+## Version en ligne
+
+Chaque push sur `main` publie le jeu sur GitHub Pages : https://robin-delbos.github.io/slime_rush/
+
+La publication est faite par `.github/workflows/deploy.yml` : installation, tests unitaires, compilation, mise en ligne. Si un test échoue, la version en ligne n'est pas remplacée. L'avancement se suit dans l'onglet *Actions* du dépôt.
+
+Réglage à faire une seule fois sur GitHub : *Settings → Pages → Source : GitHub Actions* (le dépôt doit être public avec un compte gratuit).
 
 ## Organisation du code
 
