@@ -13,7 +13,8 @@ export type SoundName =
   | 'ready'
   | 'special'
   | 'boss'
-  | 'legend';
+  | 'legend'
+  | 'chest';
 
 /** Délai minimal (s) entre deux déclenchements d'un même son, pour éviter la cacophonie. */
 const MIN_INTERVAL: Partial<Record<SoundName, number>> = {
@@ -111,6 +112,11 @@ export class Sfx {
         this.tone('sawtooth', 130, 82, 0.55, 0.22);
         this.tone('square', 196, 110, 0.5, 0.08, 0.04);
         this.tone('sawtooth', 130, 82, 0.55, 0.22, 0.6);
+        break;
+      case 'chest':
+        // Craquement du couvercle, puis scintillement.
+        this.tone('sawtooth', 180, 90, 0.18, 0.12);
+        [784, 988, 1319, 1568].forEach((f, i) => this.tone('triangle', f, f, 0.16, 0.1, 0.2 + i * 0.07));
         break;
       case 'legend':
         // Fanfare ascendante suivie de scintillements.

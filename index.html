@@ -101,6 +101,10 @@
             <button id="btn-sound" class="pill pill-btn" aria-label="Activer ou couper le son">🔊</button>
             <button id="btn-save" class="pill pill-btn" aria-label="Exporter ou importer la sauvegarde">💾</button>
           </div>
+          <div class="menu-info">
+            <button id="btn-chests" class="pill pill-btn chest-cta">🎁 Coffres</button>
+            <button id="btn-collection" class="pill pill-btn">🎒 Collection</button>
+          </div>
         </div>
         <div class="menu-bottom">
           <div id="weapons" aria-label="Arme de départ"></div>
@@ -109,6 +113,7 @@
             <button id="btn-shop" class="btn btn-alt">Boutique</button>
             <button id="btn-start" class="btn" disabled>Chargement…</button>
           </div>
+          <span id="version" class="version"></span>
         </div>
       </div>
 
@@ -154,6 +159,30 @@
         </div>
         <p id="save-status" class="best" role="status"></p>
         <button id="btn-save-back" class="btn btn-alt">Retour</button>
+      </div>
+
+      <div id="overlay-chests" class="overlay hidden">
+        <div id="chest-flash"></div>
+        <h2>Coffres</h2>
+        <p class="hint">Amulettes, apparences, pièces… et peut-être une arme secrète</p>
+        <span id="chest-gold" class="pill">🪙 0</span>
+        <div class="menu-actions">
+          <button id="btn-chest-1" class="btn btn-small">🎁 Un coffre · 1000 🪙</button>
+          <button id="btn-chest-3" class="btn btn-small btn-alt">🎁 3 coffres · 2500 🪙</button>
+        </div>
+        <p id="chest-status" class="best" role="status"></p>
+        <div id="chest-stage"></div>
+        <div class="menu-actions">
+          <button id="btn-open-collection" class="btn btn-small btn-alt">Ma collection</button>
+          <button id="btn-chests-back" class="btn btn-small">Retour</button>
+        </div>
+      </div>
+
+      <div id="overlay-collection" class="overlay hidden">
+        <h2>Collection</h2>
+        <p class="hint">Choisissez l'amulette de la prochaine partie et vos apparences</p>
+        <div id="collection-body"></div>
+        <button id="btn-collection-back" class="btn btn-alt">Retour</button>
       </div>
 
       <div id="overlay-levelup" class="overlay hidden">

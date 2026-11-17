@@ -325,7 +325,7 @@ describe('Personnages', () => {
 
 describe('Armes de départ', () => {
   it('a une arme gratuite débloquée par défaut', () => {
-    expect(WEAPONS.filter((w) => w.cost === 0).map((w) => w.id)).toEqual(['rifle']);
+    expect(WEAPONS.filter((w) => w.cost === 0 && !w.chest).map((w) => w.id)).toEqual(['rifle']);
     expect(defaultSave().weapons).toEqual(['rifle']);
     expect(selectedWeapon(defaultSave()).id).toBe('rifle');
   });

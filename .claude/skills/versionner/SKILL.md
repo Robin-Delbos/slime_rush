@@ -1,0 +1,44 @@
+---
+name: versionner
+description: Règles de numérotation de la version de Slime Rush, affichée au menu du jeu. À appliquer avant chaque commit/push de ce projet (et donc depuis /commit-fr) pour décider s'il faut augmenter la version, laquelle, et comment. À consulter aussi quand l'utilisateur parle de la version du jeu, de numéro de version ou de release.
+---
+
+# Versionner Slime Rush
+
+La version du jeu est un numéro `0.x.y` affiché en petit sous les boutons du menu (« v0.2.0 », avec « (dev) » en plus sous `npm run dev`). Elle permet à l'utilisateur et à ses testeurs de savoir quelle version du jeu ils ont sous les yeux (par exemple sur GitHub Pages après une publication).
+
+## Où elle vit
+
+- **Une seule source : le champ `version` de `package.json`.** Ne l'écrire nulle part d'autre.
+- `vite.config.ts` la transmet au code sous le nom `__APP_VERSION__` ; `src/version.ts` la lit (`APP_VERSION`, `VERSION_LABEL`) ; `src/ui.ts` l'affiche dans `#version` (emplacement dans `index.html`).
+- À ne pas confondre avec `version: 1` dans `src/meta.ts` : c'est la version du **format de sauvegarde**, qui ne change que si ce format change.
+- `tests/version.test.ts` vérifie que l'affichage suit `package.json`, que le format est `x.y.z` et qu'aucun fichier ne contient le numéro en dur.
+
+## Quand l'augmenter
+
+À décider **à chaque commit/push**, d'après le type du commit (voir `commit-fr`) :
+
+| Type du commit | Effet sur le jeu publié | Version |
+|---|---|---|
+| `feat` | Nouveauté visible pour le joueur (arme, écran, mécanique, contenu) | **mineure** : 0.2.0 → 0.3.0 |
+| `fix` | Correction d'un défaut du jeu | **correctif** : 0.2.0 → 0.2.1 |
+| `refactor` / `perf` | Seulement s'ils changent un comportement visible ; sinon rien | correctif, ou rien |
+| `docs`, `test`, `chore`, `ci`, `style` | Le jeu publié ne change pas | **aucune** |
+
+- Un commit qui mélange nouveauté et correctif prend la version **mineure**.
+- Le **majeur** (`1.0.0`) n'est jamais augmenté sans que l'utilisateur le demande : c'est un choix de communication (sortie officielle).
+- En cas de doute entre « rien » et « correctif », choisir « rien » pour une modification qui n'est pas visible dans le jeu.
+
+## Comment
+
+1. Vérifier qu'elle n'a **pas déjà été augmentée** pour ce commit : comparer `package.json` avec `git show HEAD:package.json`. Si le numéro diffère déjà, ne pas l'augmenter une seconde fois.
+2. Augmenter sans créer de tag ni de commit : `npm version minor --no-git-tag-version` (ou `patch`). Cela met à jour `package.json` **et** `package-lock.json` ; les deux fichiers font partie du commit.
+3. Faire cela **avant** le lancement des tests complets, pour que les tests et la compilation portent déjà la nouvelle version.
+4. Le message de commit n'a pas besoin d'une ligne dédiée, mais si la version change, ajouter dans le corps une ligne « Version : 0.x.y ».
+5. Dans le compte rendu à l'utilisateur, **annoncer la version** (ancienne → nouvelle) ou dire qu'elle n'a pas changé, et pourquoi.
+
+## Ne pas faire
+
+- Ne pas écrire le numéro à la main dans `index.html`, le code ou le README (le README décrit la règle, sans le numéro en cours).
+- Ne pas créer de tag Git ni de release GitHub sans demande de l'utilisateur.
+- Ne pas augmenter la version pour un commit qui ne touche que la documentation, les tests ou la CI.

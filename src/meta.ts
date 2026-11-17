@@ -1,3 +1,5 @@
+import { AMULETS, AMULET_MAX_LEVEL, amuletOf, applyAmulet } from './amulets';
+import { CATEGORIES, COSMETICS, defaultOwned, defaultStyle, type CosmeticCategory, type CosmeticOwned, type CosmeticStyle } from './cosmetics';
 import type { EnemyMods } from './enemies';
 import { baseStats, type Stats } from './player';
 import { DEFAULT_WEAPON, WEAPONS, weaponDef, type WeaponDef } from './weaponData';
@@ -21,6 +23,13 @@ export interface SaveData {
   difficulty: string;
   /** Niveau 100 atteint : pour chaque arme, les difficultés avec lesquelles c'est arrivé (badge au menu). */
   legend: Record<string, string[]>;
+  /** Amulettes en stock (nombre d'exemplaires), amulette équipée pour la prochaine partie et niveau voulu. */
+  amulets: Record<string, number>;
+  amulet: string;
+  amuletLevel: number;
+  /** Apparences possédées et apparences choisies, par catégorie. */
+  cosmetics: CosmeticOwned;
+  style: CosmeticStyle;
   muted: boolean;
 }
 
@@ -100,6 +109,11 @@ export function defaultSave(): SaveData {
     weapon: DEFAULT_WEAPON,
     difficulty: DEFAULT_DIFFICULTY,
     legend: {},
+    amulets: {},
+    amulet: '',
+    amuletLevel: 1,
+    cosmetics: defaultOwned(),
+    style: defaultStyle(),
     muted: false,
   };
 }
@@ -165,6 +179,30 @@ function sanitizeSave(raw: unknown): SaveData {
       if (known.length > 0) save.legend[w.id] = known;
     }
   }
+  if (data.amulets && typeof data.amulets === 'object' && !Array.isArray(data.amulets)) {
+    for (const a of AMULETS) {
+      const count = Number((data.amulets as Record<string, unknown>)[a.id]);
+      if (Number.isFinite(count) && count >= 1) save.amulets[a.id] = Math.min(999, Math.floor(count));
+    }
+  }
+  if (typeof data.amulet === 'string' && (save.amulets[data.amulet] ?? 0) > 0) save.amulet = data.amulet;
+  const amuletLevel = Number(data.amuletLevel);
+  if (Number.isFinite(amuletLevel)) save.amuletLevel = Math.min(AMULET_MAX_LEVEL, Math.max(1, Math.floor(amuletLevel)));
+  if (data.cosmetics && typeof data.cosmetics === 'object') {
+    for (const category of CATEGORIES) {
+      const owned = (data.cosmetics as Record<string, unknown>)[category];
+      if (!Array.isArray(owned)) continue;
+      for (const c of COSMETICS[category]) {
+        if (owned.includes(c.id) && !save.cosmetics[category].includes(c.id)) save.cosmetics[category].push(c.id);
+      }
+    }
+  }
+  if (data.style && typeof data.style === 'object') {
+    for (const category of CATEGORIES) {
+      const id = (data.style as Record<string, unknown>)[category];
+      if (typeof id === 'string' && save.cosmetics[category].includes(id)) save.style[category] = id;
+    }
+  }
   if (typeof data.difficulty === 'string' && DIFFICULTIES.some((d) => d.id === data.difficulty)) save.difficulty = data.difficulty;
   return save;
 }
@@ -219,6 +257,47 @@ export function buyShopItem(save: SaveData, id: string): boolean {
   return true;
 }
 
+/** Choisit une apparence déjà possédée. Renvoie false sinon. */
+export function selectCosmetic(save: SaveData, category: CosmeticCategory, id: string): boolean {
+  if (!save.cosmetics[category]?.includes(id)) return false;
+  save.style[category] = id;
+  return true;
+}
+
+/** Équipe une amulette pour la prochaine partie (id vide : aucune). Le niveau est borné par le stock et le maximum. */
+export function equipAmulet(save: SaveData, id: string, level = 1): boolean {
+  if (id === '') {
+    save.amulet = '';
+    return true;
+  }
+  const count = save.amulets[id] ?? 0;
+  if (!amuletOf(id) || count < 1) return false;
+  save.amulet = id;
+  save.amuletLevel = Math.min(AMULET_MAX_LEVEL, count, Math.max(1, Math.floor(level)));
+  return true;
+}
+
+/**
+ * Consomme l'amulette équipée au lancement d'une partie (autant d'exemplaires que son niveau).
+ * Renvoie ce qu'il faut appliquer à la partie, ou null s'il n'y en a pas.
+ */
+export function consumeAmulet(save: SaveData): { id: string; level: number } | null {
+  const id = save.amulet;
+  if (!id) return null;
+  const count = save.amulets[id] ?? 0;
+  if (count < 1 || !amuletOf(id)) {
+    save.amulet = '';
+    return null;
+  }
+  const level = Math.min(save.amuletLevel, count, AMULET_MAX_LEVEL);
+  save.amulets[id] = count - level;
+  if (save.amulets[id] <= 0) {
+    delete save.amulets[id];
+    save.amulet = '';
+  }
+  return { id, level };
+}
+
 /** Vrai si le niveau 100 a été atteint avec cette arme à cette difficulté (par défaut, la difficulté choisie). */
 export function hasLegend(save: SaveData, weaponId: string, difficultyId = save.difficulty): boolean {
   return save.legend[weaponId]?.includes(difficultyId) ?? false;
@@ -257,7 +336,8 @@ export function chooseWeapon(save: SaveData, id: string): 'selected' | 'bought' 
     save.weapon = id;
     return 'selected';
   }
-  if (save.gold < weapon.cost) return 'denied';
+  // Une arme de coffre ne s'achète pas : il faut la trouver.
+  if (weapon.chest || save.gold < weapon.cost) return 'denied';
   save.gold -= weapon.cost;
   save.weapons.push(id);
   save.weapon = id;
@@ -283,13 +363,14 @@ export function selectedCharacter(save: SaveData): Character {
   return CHARACTERS.find((c) => c.id === save.selected) ?? CHARACTERS[0];
 }
 
-/** Caractéristiques de départ : base + améliorations permanentes de la boutique. */
-export function startingStats(save: SaveData): Stats {
+/** Caractéristiques de départ : base + améliorations permanentes de la boutique, + l'amulette de cette partie. */
+export function startingStats(save: SaveData, amulet: { id: string; level: number } | null = null): Stats {
   const stats = baseStats();
   for (const item of SHOP_ITEMS) {
     const level = save.shop[item.id] ?? 0;
     if (level > 0) item.apply(stats, level);
   }
+  if (amulet) applyAmulet(stats, amulet.id, amulet.level);
   return stats;
 }
 

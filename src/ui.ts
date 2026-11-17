@@ -1,6 +1,10 @@
 import { CHARACTERS, DIFFICULTIES, SHOP_ITEMS, exportSave, hasLegend, importSave, shopCost, type SaveData } from './meta';
+import { AMULETS, AMULET_MAX_LEVEL, amuletOf } from './amulets';
 import { countUp } from './anim';
+import { CHEST_BUNDLE, rewardView, type ChestPrices, type ChestReward } from './chests';
+import { CATEGORIES, CATEGORY_LABELS, COSMETICS, type CosmeticCategory } from './cosmetics';
 import { WEAPON_PREFIX } from './upgrades';
+import { VERSION_LABEL } from './version';
 import { WEAPONS } from './weaponData';
 import type { Upgrade } from './upgrades';
 
@@ -9,6 +13,21 @@ function el<T extends HTMLElement = HTMLElement>(id: string): T {
   if (!node) throw new Error(`Élément #${id} introuvable`);
   return node as T;
 }
+
+/** Coffre au trésor : un corps et un couvercle séparés, pour que le couvercle puisse s'ouvrir. */
+const CHEST_ART =
+  '<svg class="chest-lid" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50" aria-hidden="true"><g stroke="#3b2412" stroke-width="3" stroke-linejoin="round">' +
+  '<path d="M10 48Q10 8 50 8Q90 8 90 48Z" fill="#b5733c"/>' +
+  '<path d="M10 40Q50 28 90 40V48H10Z" fill="#ffc93c" stroke="#8a5a0a" stroke-width="2.5"/>' +
+  '<path d="M30 12V46M70 12V46" fill="none" stroke="#7a4a24" stroke-width="2.5"/>' +
+  '<ellipse cx="38" cy="20" rx="9" ry="4" fill="#fff" opacity="0.35" stroke="none"/></g></svg>' +
+  '<span class="chest-glow"></span>' +
+  '<svg class="chest-body" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50" aria-hidden="true"><g stroke="#3b2412" stroke-width="3" stroke-linejoin="round">' +
+  '<rect x="10" y="2" width="80" height="44" rx="7" fill="#9a6232"/>' +
+  '<path d="M10 20H90M10 34H90" fill="none" stroke="#7a4a24" stroke-width="2"/>' +
+  '<rect x="10" y="9" width="80" height="9" fill="#ffc93c" stroke="#8a5a0a" stroke-width="2.5"/>' +
+  '<rect x="42" y="6" width="16" height="22" rx="4" fill="#ffd84d" stroke="#8a5a0a" stroke-width="2.5"/>' +
+  '<circle cx="50" cy="15" r="3" fill="#3b2412" stroke="none"/><rect x="48.5" y="15" width="3" height="8" fill="#3b2412" stroke="none"/></g></svg>';
 
 /**
  * Crée l'élément d'une icône : un emoji (texte), ou un dessin SVG si la valeur commence par « <svg ».
@@ -42,6 +61,15 @@ export interface UiHandlers {
   onSelectCharacter(id: string): void;
   onSelectWeapon(id: string): void;
   onSelectDifficulty(id: string): void;
+  /** Ouvre `count` coffres. Renvoie leur contenu, ou null s'il manque des pièces. */
+  onOpenChests(count: number): ChestReward[] | null;
+  /** Équipe une amulette pour la prochaine partie (id vide : aucune). */
+  onEquipAmulet(id: string, level: number): void;
+  onSelectCosmetic(category: CosmeticCategory, id: string): void;
+  /** Prix actuels des coffres (ceux du jeu, ou ceux du mode dev). */
+  chestPrices(): ChestPrices;
+  /** Un coffre vient de s'ouvrir sur un contenu de cette rareté (pour le son). */
+  onChestReveal(tier: 'common' | 'rare' | 'legendary'): void;
   onBuy(id: string): void;
   onToggleSound(): void;
   /** Remplacement de la progression par une sauvegarde importée, déjà validée. */
@@ -91,6 +119,11 @@ export class Ui {
   private gameOver = el('overlay-gameover');
   private playButton = el<HTMLButtonElement>('btn-start');
   private saveScreen = el('overlay-save');
+  private chestScreen = el('overlay-chests');
+  private collection = el('overlay-collection');
+  private chestStage = el('chest-stage');
+  /** Délais de l'animation d'ouverture en cours (annulés si on quitte l'écran). */
+  private chestTimers: number[] = [];
   private saveCode = el<HTMLTextAreaElement>('save-code');
   private saveStatus = el('save-status');
   private importButton = el<HTMLButtonElement>('btn-import');
@@ -119,6 +152,8 @@ export class Ui {
       this.shop.classList.add('hidden');
     });
     this.bindSaveScreen();
+    this.bindChestScreens();
+    el('version').textContent = VERSION_LABEL;
     this.refresh();
   }
 
@@ -258,6 +293,8 @@ export class Ui {
     weapons.replaceChildren();
     for (const w of WEAPONS) {
       const unlocked = save.weapons.includes(w.id);
+      // Une arme de coffre reste secrète tant qu'elle n'est pas trouvée.
+      if (w.chest && !unlocked) continue;
       const selected = save.weapon === w.id;
       const card = make('button', `weapon-card${selected ? ' selected' : ''}${unlocked ? '' : ' locked'}`);
       card.dataset.id = w.id;
@@ -284,6 +321,9 @@ export class Ui {
       difficulty.append(button);
     }
 
+    this.refreshChests();
+    this.refreshCollection();
+
     const items = el('shop-items');
     items.replaceChildren();
     for (const item of SHOP_ITEMS) {
@@ -306,15 +346,231 @@ export class Ui {
     }
   }
 
+  /** Écran des coffres : or, prix, et boutons grisés quand il manque des pièces. */
+private refreshChests(): void {
+    const gold = this.save.gold;
+    const prices = this.handlers.chestPrices();
+    el('chest-gold').textContent = `🪙 ${gold}`;
+    el<HTMLButtonElement>('btn-chest-1').disabled = gold < prices.single;
+    el<HTMLButtonElement>('btn-chest-3').disabled = gold < prices.bundle;
+    el('btn-chest-1').textContent = `🎁 Un coffre · ${prices.single} 🪙`;
+    el('btn-chest-3').textContent = `🎁 ${CHEST_BUNDLE.count} coffres · ${prices.bundle} 🪙`;
+    // Le bouton du menu s'anime et porte un « ! » dès qu'on a de quoi ouvrir un coffre.
+    el('btn-chests').classList.toggle('ready', gold >= prices.single);
+  }
+
+  /** Écran de collection : amulettes en stock (une équipée), puis les apparences par catégorie. */
+  private refreshCollection(): void {
+    const { save } = this;
+    const body = el('collection-body');
+    body.replaceChildren();
+
+    const amuletBox = make('section', 'collection-section');
+    amuletBox.append(make('h3', 'section-title', 'Amulette de la prochaine partie'));
+    amuletBox.append(make('p', 'hint', 'Consommée au lancement : son effet ne dure que pour une partie. Plusieurs exemplaires la renforcent.'));
+    const stock = AMULETS.filter((a) => (save.amulets[a.id] ?? 0) > 0);
+    if (stock.length === 0) amuletBox.append(make('p', 'hint', 'Aucune amulette pour l’instant : ouvrez des coffres !'));
+    for (const a of stock) {
+      const count = save.amulets[a.id];
+      const equipped = save.amulet === a.id;
+      const level = equipped ? Math.min(save.amuletLevel, count, AMULET_MAX_LEVEL) : 1;
+      const row = make('div', `amulet-row${equipped ? ' equipped' : ''}`);
+      row.dataset.id = a.id;
+      const text = make('div', 'amulet-text');
+      text.append(make('span', 'amulet-name', `${a.name} ×${count}`), make('span', 'amulet-desc', `Niveau ${level} : ${a.describe(level)}`));
+      const actions = make('div', 'amulet-actions');
+      if (equipped) {
+        const minus = make('button', 'step-btn', '−');
+        minus.disabled = level <= 1;
+        minus.addEventListener('click', () => this.handlers.onEquipAmulet(a.id, level - 1));
+        const plus = make('button', 'step-btn', '+');
+        plus.disabled = level >= Math.min(count, AMULET_MAX_LEVEL);
+        plus.addEventListener('click', () => this.handlers.onEquipAmulet(a.id, level + 1));
+        const remove = make('button', 'amulet-toggle', 'Retirer');
+        remove.addEventListener('click', () => this.handlers.onEquipAmulet('', 1));
+        actions.append(minus, plus, remove);
+      } else {
+        const equip = make('button', 'amulet-toggle', 'Équiper');
+        equip.addEventListener('click', () => this.handlers.onEquipAmulet(a.id, 1));
+        actions.append(equip);
+      }
+      row.append(iconElement('amulet-icon', a.icon), text, actions);
+      amuletBox.append(row);
+    }
+    body.append(amuletBox);
+
+    for (const category of CATEGORIES) {
+      const box = make('section', 'collection-section');
+      box.append(make('h3', 'section-title', CATEGORY_LABELS[category]));
+      const swatches = make('div', 'swatches');
+      for (const c of COSMETICS[category]) {
+        const owned = save.cosmetics[category].includes(c.id);
+        const button = make('button', `swatch${save.style[category] === c.id ? ' selected' : ''}${owned ? '' : ' locked'}`);
+        button.dataset.category = category;
+        button.dataset.id = c.id;
+        button.disabled = !owned;
+        const dot = make('span', 'swatch-dot');
+        if (c.color === 'rainbow') dot.classList.add('rainbow');
+        else if (c.color !== null) dot.style.background = '#' + c.color.toString(16).padStart(6, '0');
+        else dot.classList.add('plain');
+        button.append(dot, make('span', 'swatch-name', owned ? c.name : '🔒 ???'));
+        button.addEventListener('click', () => this.handlers.onSelectCosmetic(category, c.id));
+        swatches.append(button);
+      }
+      box.append(swatches);
+      body.append(box);
+    }
+  }
+
+  /** Boutons des écrans « Coffres » et « Collection ». */
+  private bindChestScreens(): void {
+    const { handlers } = this;
+    const open = (screen: HTMLElement) => {
+      handlers.onNavigate();
+      this.shop.classList.add('hidden');
+      this.saveScreen.classList.add('hidden');
+      this.chestScreen.classList.add('hidden');
+      this.collection.classList.add('hidden');
+      screen.classList.remove('hidden');
+    };
+    el('btn-chests').addEventListener('click', () => {
+      this.chestStage.replaceChildren();
+      el('chest-status').textContent = '';
+      open(this.chestScreen);
+    });
+    el('btn-collection').addEventListener('click', () => open(this.collection));
+    el('btn-open-collection').addEventListener('click', () => open(this.collection));
+    el('btn-chests-back').addEventListener('click', () => {
+      handlers.onNavigate();
+      this.clearChestTimers();
+      this.chestScreen.classList.add('hidden');
+    });
+    el('btn-collection-back').addEventListener('click', () => {
+      handlers.onNavigate();
+      this.collection.classList.add('hidden');
+    });
+    el('btn-chest-1').addEventListener('click', () => this.openChests(1));
+    el('btn-chest-3').addEventListener('click', () => this.openChests(CHEST_BUNDLE.count));
+  }
+
+  private clearChestTimers(): void {
+    for (const timer of this.chestTimers) window.clearTimeout(timer);
+    this.chestTimers = [];
+  }
+
+  private later(ms: number, action: () => void): void {
+    this.chestTimers.push(window.setTimeout(action, ms));
+  }
+
+  /** Gerbe d'étincelles qui jaillit d'un coffre : plus il y en a, plus le contenu est rare. */
+  private sparks(slot: HTMLElement, tier: 'common' | 'rare' | 'legendary'): void {
+    const palette = tier === 'legendary' ? ['#ffd84d', '#ffffff', '#ff9a3d', '#fff27a'] : tier === 'rare' ? ['#d8b8ff', '#ffffff', '#a97bff'] : ['#c9d7f5', '#ffffff', '#8fb0ff'];
+    const count = tier === 'legendary' ? 34 : tier === 'rare' ? 20 : 12;
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 70 + Math.random() * 90;
+      const spark = make('span', 'spark');
+      spark.style.setProperty('--dx', `${Math.cos(angle) * distance}px`);
+      spark.style.setProperty('--dy', `${Math.sin(angle) * distance - 40}px`);
+      spark.style.setProperty('--c', palette[i % palette.length]);
+      spark.style.setProperty('--delay', `${Math.random() * 90}ms`);
+      slot.append(spark);
+      this.later(1100, () => spark.remove());
+    }
+  }
+
+  /** Un coffre prêt à s'ouvrir, avec le contenu qu'il révélera. */
+  private chestSlot(reward: ChestReward, index: number): { slot: HTMLElement; open: (animated: boolean) => void } {
+    const view = rewardView(reward);
+    const slot = make('div', `chest-slot drop ${view.tier}`);
+    slot.style.setProperty('--i', String(index));
+    const rays = make('div', 'chest-rays');
+    const chest = make('div', 'chest');
+    chest.innerHTML = CHEST_ART;
+    slot.append(rays, chest);
+
+    const showCard = () => {
+      chest.remove();
+      rays.remove();
+      const card = make('div', `reward-card ${view.tier}`);
+      // Pour une amulette, on précise le stock après ce tirage.
+      const stock = reward.type === 'amulet' ? ` · ${this.save.amulets[reward.id] ?? 1} en stock` : '';
+      card.append(iconElement('reward-icon', view.icon), make('span', 'reward-title', view.title), make('span', 'reward-sub', view.subtitle + stock));
+      slot.append(card);
+    };
+
+    const open = (animated: boolean) => {
+      if (!animated) {
+        showCard();
+        return;
+      }
+      slot.classList.remove('rumble');
+      slot.classList.add('open');
+      this.sparks(slot, view.tier);
+      this.handlers.onChestReveal(view.tier);
+      navigator.vibrate?.(view.tier === 'legendary' ? [60, 40, 140, 40, 220] : [40]);
+      if (view.tier === 'legendary') {
+        // Contenu exceptionnel : éclair doré sur tout l'écran et l'écran qui tremble.
+        const flash = el('chest-flash');
+        flash.classList.remove('go');
+        void flash.offsetWidth;
+        flash.classList.add('go');
+        this.chestScreen.classList.add('quake');
+        this.later(520, () => this.chestScreen.classList.remove('quake'));
+      }
+      this.later(360, showCard);
+    };
+    return { slot, open };
+  }
+
+  /**
+   * Ouvre des coffres : ils tombent, tremblent de plus en plus, puis s'ouvrent l'un après l'autre
+   * dans un jaillissement de lumière et d'étincelles qui révèle leur contenu.
+   */
+  private openChests(count: number): void {
+    const rewards = this.handlers.onOpenChests(count);
+    const status = el('chest-status');
+    this.clearChestTimers();
+    if (!rewards) {
+      this.chestStage.replaceChildren();
+      status.textContent = 'Pas assez de pièces.';
+      status.classList.add('error');
+      return;
+    }
+    status.classList.remove('error');
+    status.textContent = '';
+    const chests = rewards.map((reward, i) => this.chestSlot(reward, i));
+    this.chestStage.replaceChildren(...chests.map((c) => c.slot));
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      for (const chest of chests) chest.open(false);
+      this.refresh();
+      return;
+    }
+    // Pendant l'animation, les boutons sont inactifs (leur état normal revient à la fin).
+    for (const id of ['btn-chest-1', 'btn-chest-3']) el<HTMLButtonElement>(id).disabled = true;
+    const RUMBLE_AT = 450;
+    const FIRST_OPEN = 1250;
+    const STEP = 650;
+    this.later(RUMBLE_AT, () => {
+      for (const chest of chests) {
+        chest.slot.classList.remove('drop');
+        chest.slot.classList.add('rumble');
+      }
+    });
+    chests.forEach((chest, i) => this.later(FIRST_OPEN + i * STEP, () => chest.open(true)));
+    this.later(FIRST_OPEN + (chests.length - 1) * STEP + 700, () => this.refresh());
+  }
+
   showMenu(): void {
     this.lowHp.classList.remove('active');
     this.refresh();
-    for (const node of [this.hud, this.shop, this.saveScreen, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
+    for (const node of [this.hud, this.shop, this.saveScreen, this.chestScreen, this.collection, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
     this.start.classList.remove('hidden');
   }
 
   showGame(): void {
-    for (const node of [this.start, this.shop, this.saveScreen, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
+    for (const node of [this.start, this.shop, this.saveScreen, this.chestScreen, this.collection, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
     this.hud.classList.remove('hidden');
   }
 

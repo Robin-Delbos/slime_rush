@@ -26,6 +26,8 @@ export interface WeaponDef {
   desc: string;
   /** Prix de déblocage dans le menu (0 = disponible dès le départ). */
   cost: number;
+  /** Arme exclusive aux coffres : absente de la boutique, invisible au menu tant qu'elle n'est pas trouvée. */
+  chest?: boolean;
   levels: WeaponLevel[];
 }
 
@@ -71,6 +73,20 @@ const ORBS_ICON =
   '<g fill="#fff" opacity="0.85">' +
   '<circle cx="50.5" cy="29.5" r="2.2"/><circle cx="19" cy="47.7" r="2.2"/><circle cx="19" cy="11.3" r="2.2"/>' +
   '</g></svg>';
+
+/** Icône dessinée des Mines : une bombe hérissée de pointes, avec sa mèche et son voyant rouge. */
+const MINES_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">' +
+  '<defs><radialGradient id="mine-body" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#8a93a8"/><stop offset="1" stop-color="#2f3547"/></radialGradient></defs>' +
+  '<g stroke="#161a2a" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round">' +
+  '<path d="M49 38h8M44 50l5 5M32 55v6M20 50l-5 5M15 38H7M20 26l-5-5M44 26l5-5" fill="none" stroke-width="4"/>' +
+  '<circle cx="32" cy="38" r="17" fill="url(#mine-body)"/>' +
+  '<path d="M32 21q3-8 11-9" fill="none" stroke="#c9a06a" stroke-width="3"/>' +
+  '<circle cx="32" cy="38" r="6" fill="#ff4d3a"/>' +
+  '</g>' +
+  '<path d="M45 6l1.6 3.8 3.9.4-3 2.6.9 3.9-3.4-2-3.4 2 .9-3.9-3-2.6 3.9-.4z" fill="#ffd84d" stroke="#b8760f" stroke-width="1"/>' +
+  '<ellipse cx="25" cy="31" rx="4" ry="2.5" fill="#fff" opacity="0.5" transform="rotate(-30 25 31)"/>' +
+  '</svg>';
 
 /** Pour ajouter une arme : une entrée ici, son comportement dans `src/weapons.ts`. */
 export const WEAPONS: WeaponDef[] = [
@@ -132,6 +148,24 @@ export const WEAPONS: WeaponDef[] = [
       lv('+1 lance', 3.1, 0.98, 2, 99, 0.5),
       lv('Lances plus larges', 3.1, 0.98, 2, 99, 0.8),
       lv('+1 lance et +30 % de dégâts', 4, 0.98, 3, 99, 0.8),
+    ],
+  },
+  // Arme secrète des coffres : elle ne tire pas, elle sème des pièges (il faut bouger pour les placer).
+  // Réglée pour être 10 à 20 % plus forte que la carabine et la lance (dégâts × nombre / délai, niveau par niveau).
+  {
+    id: 'mines',
+    icon: MINES_ICON,
+    name: 'Mines',
+    desc: 'Sème des pièges qui explosent au passage des ennemis',
+    cost: 0,
+    chest: true,
+    levels: [
+      lv('Sème des pièges qui explosent au passage des ennemis', 3.4, 1.6, 1, 0, 2.6),
+      lv('+1 mine à chaque pose', 3.4, 1.6, 2, 0, 2.6),
+      lv('+25 % de dégâts', 4.25, 1.6, 2, 0, 2.6),
+      lv('Explosions plus larges', 4.25, 1.6, 2, 0, 3.4),
+      lv('Pose 30 % plus vite', 4.25, 1.1, 2, 0, 3.4),
+      lv('+1 mine et +20 % de dégâts', 5.1, 1.1, 3, 0, 3.4),
     ],
   },
 ];

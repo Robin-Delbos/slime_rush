@@ -5,7 +5,7 @@ import { Player, baseStats, type MoveInput, type Stats } from './player';
 import { rand, random } from './rng';
 import { rollUpgrades, WEAPON_PREFIX, type Upgrade } from './upgrades';
 import { DEFAULT_WEAPON } from './weaponData';
-import { Weapons } from './weapons';
+import { Weapons, type WeaponStyle } from './weapons';
 
 /** Signaux émis par la simulation ; l'affichage s'en sert pour les sons et les effets. */
 export interface RunEvents {
@@ -27,6 +27,8 @@ export interface RunEvents {
   onBossKilled?(e: Enemy): void;
   /** Un boss frappe autour de lui. */
   onBossSlam?(e: Enemy, radius: number): void;
+  /** Une mine vient d'exploser. */
+  onMineBlast?(x: number, z: number, radius: number): void;
   /** Un boss tire une salve de projectiles. */
   onBossFire?(e: Enemy): void;
   /** Le niveau 100 vient d'être atteint : le mode Légende commence. */
@@ -41,6 +43,13 @@ export interface RunSetup {
   weapon?: string;
   /** Difficulté des ennemis. */
   mods?: EnemyMods;
+  /** Apparence des projectiles et de leur traînée. */
+  style?: WeaponStyle;
+  /** Mode dev : niveau et temps (en secondes) de départ. */
+  startLevel?: number;
+  startTime?: number;
+  /** Mode dev : donne les améliorations d'un joueur de ce niveau. */
+  autoUpgrades?: boolean;
 }
 
 /** Un boss arrive toutes les 2 minutes, et il y en a un de plus à chaque vague (jusqu'à MAX_BOSSES en même temps). */
@@ -102,6 +111,9 @@ export class Run {
   legendTime = 0;
   /** Vrai dès que le niveau 100 a été atteint dans cette partie. */
   legendReached = false;
+  /** Niveau et temps de départ de la partie (1 et 0, sauf en mode dev). */
+  startLevel = 1;
+  startTime = 0;
 
   private nextBossAt = BOSS_INTERVAL;
   /** Boss de la vague en cours qui n'ont pas encore été lancés. */
@@ -124,6 +136,7 @@ export class Run {
 
     this.weapons.onShoot = (weapon, x, z, angle) => this.events.onShoot?.(weapon, x, z, angle);
     this.weapons.onPulse = (x, z, radius) => this.events.onPulse?.(x, z, radius);
+    this.weapons.onBlast = (x, z, radius) => this.events.onMineBlast?.(x, z, radius);
     this.enemies.onHit = (e, damage) => this.events.onEnemyHit?.(e, damage);
     this.enemies.onSlam = (e, radius) => this.events.onBossSlam?.(e, radius);
     this.enemies.onFire = (e) => this.events.onBossFire?.(e);
@@ -142,6 +155,7 @@ export class Run {
     this.pickups.clear();
     this.upgradeLevels.clear();
     this.enemies.mods = setup.mods ?? NO_MODS;
+    this.weapons.style = setup.style ?? { projectile: null, trail: null };
     const weapon = setup.weapon ?? DEFAULT_WEAPON;
     if (this.weapons.levelUp(weapon) > 0) this.upgradeLevels.set(WEAPON_PREFIX + weapon, 1);
     this.time = 0;
@@ -161,6 +175,45 @@ export class Run {
     this.bossQueue = 0;
     this.bossTimer = 0;
     this.bossSerial = 0;
+    this.startLevel = 1;
+    this.startTime = 0;
+    this.applyCustomStart(setup);
+  }
+
+  /** Temps réellement joué : le temps de départ du mode dev n'est pas compté. */
+  get survived(): number {
+    return Math.max(0, this.time - this.startTime);
+  }
+
+  /** Vrai si la partie n'a pas démarré au niveau 1 et à 0 s (mode dev) : ni record ni récompense « normale ». */
+  get customStart(): boolean {
+    return this.startTime > 0 || this.startLevel > 1;
+  }
+
+  /** Mode dev : démarre au niveau et au temps demandés, avec (ou sans) les améliorations correspondantes. */
+  private applyCustomStart(setup: RunSetup): void {
+    const level = Math.max(1, Math.floor(setup.startLevel ?? 1));
+    const time = Math.max(0, setup.startTime ?? 0);
+    this.startLevel = level;
+    this.startTime = time;
+    this.time = time;
+    // Les vagues de boss « déjà passées » ne se déclenchent pas toutes d'un coup : la prochaine arrive à l'échéance suivante.
+    this.bossWave = Math.floor(time / BOSS_INTERVAL);
+    this.nextBossAt = (this.bossWave + 1) * BOSS_INTERVAL;
+    if (level > 1) {
+      this.level = level;
+      if (setup.autoUpgrades) this.grantUpgrades(level - 1);
+      this.player.hp = this.player.stats.maxHp;
+    }
+  }
+
+  /** Donne `count` améliorations tirées au hasard parmi celles qui seraient proposées, comme un joueur qui choisirait au hasard. */
+  private grantUpgrades(count: number): void {
+    for (let i = 0; i < count; i++) {
+      const picks = rollUpgrades(this.upgradeLevels, 3);
+      if (picks.length === 0) return;
+      this.applyUpgrade(picks[Math.floor(random() * picks.length)]);
+    }
   }
 
   get specialReady(): boolean {
@@ -315,8 +368,12 @@ export class Run {
   /** Applique l'amélioration choisie et relance la partie. */
   choose(upgrade: Upgrade): void {
     if (!this.pendingChoices?.includes(upgrade)) return;
+    this.applyUpgrade(upgrade);
+    this.pendingChoices = null;
+  }
+
+  private applyUpgrade(upgrade: Upgrade): void {
     upgrade.apply(this);
     this.upgradeLevels.set(upgrade.id, (this.upgradeLevels.get(upgrade.id) ?? 0) + 1);
-    this.pendingChoices = null;
   }
 }

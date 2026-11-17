@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Enemies, Enemy } from './enemies';
 import type { Player } from './player';
+import { rand } from './rng';
 import { weaponDef, type WeaponLevel } from './weaponData';
 
 type ShotKind = 'rifle' | 'spear';
@@ -32,6 +33,32 @@ const ORB_RADIUS = 0.32;
 const ORB_SPEED = 2.6;
 /** Durée de l'anneau qui se propage à chaque pulsation de l'aura. */
 const RING_TIME = 0.3;
+/** Mines : armées après un court délai, elles explosent quand un ennemi s'approche, ou à la fin de leur durée de vie. */
+const MINE_ARM_TIME = 0.6;
+const MINE_LIFE = 9;
+const MINE_TRIGGER = 1.3;
+const MINE_RADIUS = 0.32;
+const MAX_MINES = 40;
+const MINE_IDLE = new THREE.Color(0x6b7280);
+const MINE_ARMED = new THREE.Color(0xff4d3a);
+const MINE_BLINK = new THREE.Color(0x2a2f45);
+const BULLET_COLOR = new THREE.Color(0xfff27a);
+const SPEAR_COLOR = new THREE.Color(0xff9d4d);
+
+/** Apparence choisie dans la collection : nombre = couleur fixe, 'rainbow' = arc-en-ciel, null = d'origine. */
+export interface WeaponStyle {
+  projectile: number | 'rainbow' | null;
+  trail: number | 'rainbow' | null;
+}
+
+interface Mine {
+  x: number;
+  z: number;
+  age: number;
+  damage: number;
+  area: number;
+}
+
 const TRAIL_COLORS: Record<ShotKind, THREE.Color> = { rifle: new THREE.Color(0xffb347), spear: new THREE.Color(0x9fe6ff) };
 
 /**
@@ -43,6 +70,10 @@ export class Weapons {
   onShoot?: (weapon: string, x: number, z: number, angle: number) => void;
   /** L'aura vient de pulser autour du point donné. */
   onPulse?: (x: number, z: number, radius: number) => void;
+  /** Une mine vient d'exploser. */
+  onBlast?: (x: number, z: number, radius: number) => void;
+  /** Apparence des projectiles et de leur traînée. */
+  style: WeaponStyle = { projectile: null, trail: null };
 
   private levels = new Map<string, number>();
   private timers = new Map<string, number>();
@@ -51,6 +82,9 @@ export class Weapons {
   private spearMesh: THREE.InstancedMesh;
   private orbMesh: THREE.InstancedMesh;
   private haloMesh: THREE.InstancedMesh;
+  private mines: Mine[] = [];
+  private mineMesh: THREE.InstancedMesh;
+  private tint = new THREE.Color();
   /** Traînée lumineuse derrière chaque projectile. */
   private trailMesh: THREE.InstancedMesh;
   private auraDisc: THREE.Mesh;
@@ -86,7 +120,8 @@ export class Weapons {
     this.haloMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(ORB_RADIUS * 2, 12, 8), glow(0x6fe9ff, 0.28), MAX_ORBS);
     // Cône dont la pointe regarde vers l'arrière (-Z) : posé derrière le projectile, il dessine sa traînée.
     this.trailMesh = new THREE.InstancedMesh(new THREE.ConeGeometry(0.5, 1, 8).rotateX(-Math.PI / 2), glow(0xffffff, 0.6), MAX_SHOTS);
-    for (const mesh of [this.shotMesh, this.spearMesh, this.orbMesh, this.haloMesh, this.trailMesh]) {
+    this.mineMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(MINE_RADIUS, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }), MAX_MINES);
+    for (const mesh of [this.shotMesh, this.spearMesh, this.orbMesh, this.haloMesh, this.trailMesh, this.mineMesh]) {
       mesh.count = 0;
       mesh.frustumCulled = false;
       scene.add(mesh);
@@ -113,6 +148,11 @@ export class Weapons {
   }
 
   /** Identifiants des armes possédées. */
+  /** Mines posées, pas encore explosées. */
+  get mineCount(): number {
+    return this.mines.length;
+  }
+
   get owned(): string[] {
     return [...this.levels.keys()];
   }
@@ -137,6 +177,8 @@ export class Weapons {
     this.levels.clear();
     this.timers.clear();
     this.shots.length = 0;
+    this.mines.length = 0;
+    this.mineMesh.count = 0;
     this.ringAge = 1;
     this.shotMesh.count = this.spearMesh.count = this.orbMesh.count = this.haloMesh.count = this.trailMesh.count = 0;
     this.auraDisc.visible = this.auraRing.visible = false;
@@ -148,7 +190,8 @@ export class Weapons {
     this.moveShots(dt, enemies);
     this.updateOrbs(time, player, enemies);
     this.updateAura(dt, player, enemies);
-    this.render();
+    this.updateMines(dt, time, player, enemies);
+    this.render(time);
   }
 
   /** Mesure d'une arme possédée à son niveau actuel. */
@@ -293,7 +336,72 @@ export class Weapons {
     }
   }
 
-  private render(): void {
+  /** Mines : une pose régulière derrière le héros tant que des ennemis rôdent, puis explosion au contact. */
+  private updateMines(dt: number, time: number, player: Player, enemies: Enemies): void {
+    const w = this.stats('mines');
+    if (w) {
+      const timer = (this.timers.get('mines') ?? 0) - dt;
+      this.timers.set('mines', timer);
+      if (timer <= 0) {
+        if (enemies.nearest(player.x, player.z, RANGE + 4)) {
+          for (let i = 0; i < w.count && this.mines.length < MAX_MINES; i++) {
+            this.mines.push({ x: player.x + rand(-0.9, 0.9), z: player.z + rand(-0.9, 0.9), age: 0, damage: player.stats.damage * w.damage, area: w.area });
+          }
+          this.timers.set('mines', w.interval * player.stats.cooldown);
+        } else {
+          this.timers.set('mines', 0);
+        }
+      }
+    }
+
+    for (let i = this.mines.length - 1; i >= 0; i--) {
+      const mine = this.mines[i];
+      mine.age += dt;
+      let blast = mine.age >= MINE_LIFE;
+      if (!blast && mine.age >= MINE_ARM_TIME) {
+        for (const e of enemies.list) {
+          if (e.hp > 0 && (e.x - mine.x) ** 2 + (e.z - mine.z) ** 2 < (MINE_TRIGGER + e.radius) ** 2) {
+            blast = true;
+            break;
+          }
+        }
+      }
+      if (!blast) continue;
+      for (const e of enemies.list) {
+        const dx = e.x - mine.x;
+        const dz = e.z - mine.z;
+        const d = Math.hypot(dx, dz) || 0.0001;
+        if (e.hp > 0 && d < mine.area + e.radius) enemies.hit(e, mine.damage, dx / d, dz / d);
+      }
+      this.onBlast?.(mine.x, mine.z, mine.area);
+      this.mines[i] = this.mines[this.mines.length - 1];
+      this.mines.pop();
+    }
+
+    for (let i = 0; i < this.mines.length; i++) {
+      const mine = this.mines[i];
+      this.mineMesh.setMatrixAt(i, this.m.makeTranslation(mine.x, 0.28, mine.z));
+      // Voyant : gris tant que la mine n'est pas armée, puis il clignote en rouge.
+      const armed = mine.age >= MINE_ARM_TIME;
+      this.mineMesh.setColorAt(i, armed ? (Math.sin(time * 12 + i) > 0 ? MINE_ARMED : MINE_BLINK) : MINE_IDLE);
+    }
+    this.mineMesh.count = this.mines.length;
+    this.mineMesh.instanceMatrix.needsUpdate = true;
+    if (this.mineMesh.instanceColor) this.mineMesh.instanceColor.needsUpdate = true;
+  }
+
+  /** Couleur d'une apparence à l'instant donné (l'arc-en-ciel change avec le temps), ou null pour la couleur d'origine. */
+  private styleColor(spec: number | 'rainbow' | null, time: number): THREE.Color | null {
+    if (spec === null) return null;
+    return spec === 'rainbow' ? this.tint.setHSL((time * 0.6) % 1, 1, 0.6) : this.tint.setHex(spec);
+  }
+
+  private render(time: number): void {
+    const projectile = this.styleColor(this.style.projectile, time);
+    (this.shotMesh.material as THREE.MeshBasicMaterial).color.copy(projectile ?? BULLET_COLOR);
+    (this.spearMesh.material as THREE.MeshBasicMaterial).color.copy(projectile ?? SPEAR_COLOR);
+    const trailColor = this.styleColor(this.style.trail, time)?.clone() ?? null;
+
     let bullets = 0;
     let spears = 0;
     let trails = 0;
@@ -307,7 +415,7 @@ export class Weapons {
       const back = length / 2 / s.speed;
       this.v.set(s.x - s.vx * back, 0.9, s.z - s.vz * back);
       this.trailMesh.setMatrixAt(trails, this.m.compose(this.v, this.q, this.s.set(width, width, length)));
-      this.trailMesh.setColorAt(trails++, TRAIL_COLORS[s.kind]);
+      this.trailMesh.setColorAt(trails++, trailColor ?? TRAIL_COLORS[s.kind]);
       if (s.kind === 'rifle') {
         this.s.set(1, 1, 2.2);
         this.shotMesh.setMatrixAt(bullets++, this.m.compose(this.p, this.q, this.s));

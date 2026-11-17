@@ -98,6 +98,19 @@ Un boss arrive toutes les **2 minutes**, avec **un boss de plus à chaque vague*
 - Chaque boss a sa barre de vie au-dessus de lui ; hors de l'écran, elle est ramenée au bord pour montrer d'où il vient.
 - À sa mort, il lâche une grosse gerbe de pièces et de gemmes d'XP.
 
+## Coffres et collection
+
+Au menu, **🎁 Coffres** permet d'ouvrir un coffre pour **1000 pièces**, ou **trois coffres pour 2500 pièces**. Chaque coffre contient, au hasard :
+
+| Contenu | Chance | Détail |
+|---|---|---|
+| Arme exclusive aux coffres | ~1 % | Introuvable en boutique ; elle est un peu plus forte que les autres armes. Apparaît au menu une fois trouvée. |
+| Amulette | ~38 % | Effet pour **une seule partie** : elle est consommée au lancement. Chaque exemplaire en plus la renforce (jusqu'à 3 utilisés d'un coup). |
+| Apparence | ~32 % | Couleur des projectiles, traînée derrière eux, poussière sous les pas. Jamais deux fois la même. |
+| Pièces | ~29 % | De 200 à 10 000 pièces, les petits montants étant les plus fréquents. |
+
+**🎒 Collection** (au menu, ou depuis l'écran des coffres) : on y équipe l'amulette de la prochaine partie (et son niveau, selon le nombre d'exemplaires) et on choisit ses apparences. Amulettes : Œil de sage (XP), Cœur de pierre (PV), Bourse sans fond (pièces), Plume de vent (vitesse), Croc de loup (dégâts), Pierre tourbillon (portée de ramassage).
+
 ## Progression entre les parties
 
 - **Or** : pièces ramassées + 1 pièce par tranche de 10 secondes de survie, multipliées selon la difficulté, versées à la fin de la partie.
@@ -109,6 +122,19 @@ La sauvegarde est stockée dans le navigateur (`localStorage`). Elle est donc pr
 
 Pour la transporter ailleurs, le bouton 💾 du menu ouvre l'écran **Sauvegarde** : *Exporter* donne un code à copier ou un fichier à télécharger, *Importer* le relit (collé ou choisi comme fichier) et remplace la progression après confirmation. Le réglage du son reste celui de l'appareil.
 
+## Version
+
+La version du jeu (`0.x.y`) est écrite à un seul endroit, le champ `version` de `package.json`, et s'affiche en petit sous les boutons du menu (« v0.2.0 », avec « (dev) » en plus sous `npm run dev`). Elle est augmentée à chaque commit qui change le jeu : `feat` → version mineure (0.2.0 → 0.3.0), `fix` → correctif (0.2.0 → 0.2.1), rien pour la documentation, les tests ou la CI. Commande : `npm version minor --no-git-tag-version` (ou `patch`).
+
+## Mode dev
+
+Avec `npm run dev` uniquement (il n'existe pas dans la version publiée), un bouton **🛠 Dev** apparaît en haut à gauche du menu pour gagner du temps pendant les tests :
+
+- **Niveau et temps de départ** : choisir le niveau (1 à 150) et le temps de survie (0 à 60 min) avant de lancer la partie, avec ou sans les améliorations d'un joueur de ce niveau, et trois préréglages (niveau 25, boss ×4, niveau 99). Les records de temps ne sont pas modifiés et l'or de fin de partie ne compte que le temps réellement joué.
+- **Coffres à 1 pièce** : un coffre pour 1 pièce, trois pour 2 pièces. Cette option est indépendante de la précédente.
+
+Les réglages sont conservés d'une session à l'autre, séparément de la sauvegarde du jeu.
+
 ## Tests
 
 | Commande | Rôle | Durée |
@@ -116,6 +142,7 @@ Pour la transporter ailleurs, le bouton 💾 du menu ouvre l'écran **Sauvegarde
 | `npm test` | Tests unitaires de la logique de jeu (sans navigateur) | ~5 s |
 | `npm run test:watch` | Les mêmes, relancés à chaque modification | continu |
 | `npm run test:e2e` | Compile le jeu puis le joue dans Chrome sans fenêtre, en format PC et mobile | ~2 min |
+| `npm run test:e2e:mobile` | Joue au doigt sur quatre tailles de téléphone, à la verticale puis à l'horizontale, et fait pivoter l'appareil en pleine partie | ~1 min |
 | `npm run test:all` | Types + tests unitaires + test de bout en bout | ~2 min |
 
 À lancer avant de valider une modification : `npm test` pendant le développement, `npm run test:all` avant de considérer une fonctionnalité terminée.
@@ -158,6 +185,9 @@ Réglage à faire une seule fois sur GitHub : *Settings → Pages → Source : G
 | `src/pickups.ts` | Gemmes d'XP et pièces |
 | `src/upgrades.ts` | Cartes de montée de niveau : bonus passifs et niveaux d'armes |
 | `src/meta.ts` | Sauvegarde, boutique, armes à débloquer, apparences, difficultés |
+| `src/chests.ts` | Contenu des coffres : prix, probabilités, tirage et rangement dans la sauvegarde |
+| `src/amulets.ts` | Amulettes (effet pour une partie) |
+| `src/cosmetics.ts` | Apparences à collectionner : projectiles, traînées, poussière |
 | `src/assets.ts` | Chargement des modèles 3D |
 | `src/bake.ts` | Conversion des animations en images fixes (voir ci-dessous) |
 | `src/hero.ts` | Modèle animé du héros |
@@ -174,6 +204,7 @@ Réglage à faire une seule fois sur GitHub : *Settings → Pages → Source : G
 - **Bonus passif en partie** : une entrée dans `PASSIVES` (`src/upgrades.ts`).
 - **Arme** : ses 6 niveaux dans `WEAPONS` (`src/weaponData.ts`) et son comportement dans `src/weapons.ts`. Le test « Données des armes » vérifie que chaque niveau apporte quelque chose.
 - **Difficulté** : une entrée dans `DIFFICULTIES` (`src/meta.ts`).
+- **Amulette** : une entrée dans `AMULETS` (`src/amulets.ts`) ; **apparence** : une entrée dans `COSMETICS` (`src/cosmetics.ts`) ; **arme de coffre** : une arme avec `chest: true` dans `WEAPONS`.
 - **Boss** : un type avec `boss: true` dans `DEFS` (`src/enemies.ts`) ; la cadence et le plafond sont dans `src/run.ts` (`BOSS_INTERVAL`, `MAX_BOSSES`).
 - **Amélioration permanente** : une entrée dans `SHOP_ITEMS` (`src/meta.ts`).
 - **Apparence** : une entrée dans `CHARACTERS` (`src/meta.ts`) et son modèle dans `public/models/`. Le modèle doit contenir des animations nommées `Idle`, `Run` (ou `Running`) et `Death`.

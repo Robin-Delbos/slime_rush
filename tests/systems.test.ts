@@ -652,6 +652,123 @@ describe('Weapons', () => {
     });
   });
 
+  describe('Mines', () => {
+    const minesSetup = () => {
+      const s = setup('mines');
+      const blasts: { x: number; z: number; radius: number }[] = [];
+      s.weapons.onBlast = (x, z, radius) => blasts.push({ x, z, radius });
+      return { ...s, blasts };
+    };
+
+    it('ne pose des mines que si des ennemis rôdent', () => {
+      const s = minesSetup();
+      advance(s.weapons, s, 1);
+      expect(s.weapons.mineCount).toBe(0);
+      placeEnemy(s.enemies, 6, 0, enemyType('orc'));
+      s.weapons.update(STEP, 0, s.player, s.enemies);
+      expect(s.weapons.mineCount).toBe(1);
+    });
+
+    it('pose plus de mines à chaque pose aux niveaux suivants', () => {
+      const s = minesSetup();
+      s.weapons.levelUp('mines');
+      placeEnemy(s.enemies, 6, 0, enemyType('orc'));
+      s.weapons.update(STEP, 0, s.player, s.enemies);
+      expect(s.weapons.mineCount).toBe(2);
+    });
+
+    it('explose au contact d’un ennemi, seulement une fois armée, et blesse ce qui est dans le rayon', () => {
+      const s = minesSetup();
+      const near = placeEnemy(s.enemies, 0.3, 0, enemyType('orc'));
+      const far = placeEnemy(s.enemies, 14, 0, enemyType('orc'));
+      s.weapons.update(STEP, 0, s.player, s.enemies);
+      expect(s.weapons.mineCount).toBe(1);
+      // Pas encore armée : l'ennemi tout près ne la déclenche pas.
+      advance(s.weapons, s, 0.4);
+      expect(s.blasts).toHaveLength(0);
+      expect(near.hp).toBe(near.type.hp);
+      advance(s.weapons, s, 0.4);
+      expect(s.blasts).toHaveLength(1);
+      expect(s.blasts[0].radius).toBe(weaponDef('mines')!.levels[0].area);
+      expect(near.hp).toBeCloseTo(near.type.hp - s.player.stats.damage * weaponDef('mines')!.levels[0].damage);
+      expect(far.hp).toBe(far.type.hp);
+    });
+
+    it('explose d’elle-même à la fin de sa durée de vie, même sans ennemi à proximité', () => {
+      const s = minesSetup();
+      placeEnemy(s.enemies, 8, 0, enemyType('orc'));
+      s.weapons.update(STEP, 0, s.player, s.enemies);
+      expect(s.weapons.mineCount).toBe(1);
+      advance(s.weapons, s, 9.5);
+      expect(s.blasts.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('s’efface avec les armes à la remise à zéro', () => {
+      const s = minesSetup();
+      placeEnemy(s.enemies, 6, 0, enemyType('orc'));
+      s.weapons.update(STEP, 0, s.player, s.enemies);
+      s.weapons.clear();
+      expect(s.weapons.mineCount).toBe(0);
+    });
+
+    it('suit les dégâts du héros', () => {
+      const s = minesSetup();
+      s.player.stats.damage = 100;
+      const orc = placeEnemy(s.enemies, 0.3, 0, enemyType('orc'));
+      orc.hp = 1e6;
+      advance(s.weapons, s, 1);
+      expect(1e6 - orc.hp).toBeCloseTo(100 * weaponDef('mines')!.levels[0].damage, 0);
+    });
+  });
+
+  describe('Apparence des projectiles', () => {
+    const bulletColor = (w: Weapons) => ((w as unknown as { shotMesh: THREE.InstancedMesh }).shotMesh.material as THREE.MeshBasicMaterial).color.getHex();
+    const trailColorAt = (w: Weapons) => {
+      const trail = (w as unknown as { trailMesh: THREE.InstancedMesh }).trailMesh;
+      const color = new THREE.Color();
+      trail.getColorAt(0, color);
+      return color.getHex();
+    };
+
+    it('garde les couleurs d’origine par défaut', () => {
+      const s = setup();
+      placeEnemy(s.enemies, 6, 0, enemyType('orc'));
+      s.weapons.update(STEP, 0, s.player, s.enemies);
+      expect(bulletColor(s.weapons)).toBe(0xfff27a);
+    });
+
+    it('applique la couleur choisie aux projectiles et à leur traînée', () => {
+      const s = setup();
+      s.weapons.style = { projectile: 0xff0000, trail: 0x00ff00 };
+      placeEnemy(s.enemies, 6, 0, enemyType('orc'));
+      s.weapons.update(STEP, 0, s.player, s.enemies);
+      s.weapons.update(STEP, 0, s.player, s.enemies);
+      expect(bulletColor(s.weapons)).toBe(0xff0000);
+      expect(trailColorAt(s.weapons)).toBe(0x00ff00);
+    });
+
+    it('revient à la couleur d’origine quand l’apparence est retirée', () => {
+      const s = setup();
+      placeEnemy(s.enemies, 6, 0, enemyType('orc'));
+      s.weapons.style = { projectile: 0x123456, trail: null };
+      s.weapons.update(STEP, 0, s.player, s.enemies);
+      expect(bulletColor(s.weapons)).toBe(0x123456);
+      s.weapons.style = { projectile: null, trail: null };
+      s.weapons.update(STEP, 0, s.player, s.enemies);
+      expect(bulletColor(s.weapons)).toBe(0xfff27a);
+    });
+
+    it('fait changer l’arc-en-ciel avec le temps', () => {
+      const s = setup();
+      s.weapons.style = { projectile: 'rainbow', trail: null };
+      placeEnemy(s.enemies, 6, 0, enemyType('orc'));
+      s.weapons.update(STEP, 0, s.player, s.enemies);
+      const first = bulletColor(s.weapons);
+      s.weapons.update(STEP, 1, s.player, s.enemies);
+      expect(bulletColor(s.weapons)).not.toBe(first);
+    });
+  });
+
   describe('Cumul', () => {
     it('fait agir plusieurs armes en même temps', () => {
       const s = setup('rifle', 'aura');
@@ -711,6 +828,23 @@ describe('Données des armes', () => {
 
   it('dessine l’icône de la carabine plutôt que d’utiliser un emoji', () => {
     expect(weaponDef('rifle')!.icon.startsWith('<svg')).toBe(true);
+  });
+
+  it('rend l’arme de coffre 10 à 20 % plus forte que la carabine et la lance', () => {
+    // Mesure simple : dégâts × nombre de projectiles / délai (dégâts par seconde sur une cible), niveau par niveau.
+    const dps = (id: string) => weaponDef(id)!.levels.map((l) => (l.damage * l.count) / l.interval);
+    const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
+    const reference = sum(dps('rifle')) / 2 + sum(dps('spear')) / 2;
+    const ratio = sum(dps('mines')) / reference;
+    expect(ratio).toBeGreaterThanOrEqual(1.1);
+    expect(ratio).toBeLessThanOrEqual(1.2);
+    // La carabine et la lance, elles, restent proches l'une de l'autre.
+    expect(sum(dps('spear')) / sum(dps('rifle'))).toBeGreaterThan(0.8);
+    expect(sum(dps('spear')) / sum(dps('rifle'))).toBeLessThan(1.2);
+  });
+
+  it('réserve l’arme de coffre aux coffres : ni gratuite ni payante en boutique', () => {
+    expect(WEAPONS.filter((w) => w.chest).map((w) => w.id)).toEqual(['mines']);
   });
 
   it('proposent une arme gratuite et plusieurs armes à débloquer', () => {

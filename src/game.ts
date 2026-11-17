@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { loadAssets } from './assets';
 import { Sfx } from './audio';
+import type { DevTools } from './dev';
+import { amuletOf } from './amulets';
+import { CHEST_PRICES, openChests, type ChestPrices } from './chests';
+import { cosmeticColor } from './cosmetics';
 import { Effects } from './effects';
 import { createFallbackHero, createModelHero, type HeroState, type HeroView } from './hero';
 import { Input } from './input';
@@ -10,6 +14,9 @@ import {
   addLegend,
   buyShopItem,
   chooseCharacter,
+  consumeAmulet,
+  equipAmulet,
+  selectCosmetic,
   chooseDifficulty,
   chooseWeapon,
   loadSave,
@@ -33,6 +40,7 @@ const AURA_COLOR = new THREE.Color(0xff8a3d);
 /** Confettis du mode Légende. */
 const LEGEND_COLORS = [0xffd84d, 0xffffff, 0x6fe9ff, 0xff7ad9, 0x8dff6f].map((c) => new THREE.Color(c));
 const DUST_COLOR = new THREE.Color(0xd9cfa0);
+const MINE_COLOR = new THREE.Color(0xff7a3d);
 const WHITE = new THREE.Color(0xffffff);
 /** Couleur de l'éclat de départ des projectiles de chaque arme. */
 const MUZZLE_COLORS: Record<string, THREE.Color> = {
@@ -64,6 +72,10 @@ export class Game {
   private dustTimer = 0;
   private bossPoint = new THREE.Vector3();
   private legendTimer = 0;
+  /** Source de hasard des coffres (remplaçable par les tests de bout en bout). */
+  private chestRandom: () => number = Math.random;
+  /** Outils du mode dev (version de développement uniquement). */
+  private dev: DevTools | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.world = new World(canvas);
@@ -105,6 +117,28 @@ export class Game {
         this.world.setAtmosphere(this.save.difficulty);
         this.commit();
       },
+      onOpenChests: (count) => {
+        const rewards = openChests(this.save, count, this.chestRandom, this.chestPrices());
+        this.sfx.unlock();
+        this.sfx.play(rewards ? 'chest' : 'deny');
+        if (rewards) this.commit();
+        return rewards;
+      },
+      chestPrices: () => this.chestPrices(),
+      onChestReveal: (tier) => {
+        // Plus le contenu est rare, plus le son est triomphal.
+        this.sfx.play(tier === 'legendary' ? 'legend' : tier === 'rare' ? 'levelup' : 'coin');
+      },
+      onEquipAmulet: (id, level) => {
+        this.sfx.play('click');
+        equipAmulet(this.save, id, level);
+        this.commit();
+      },
+      onSelectCosmetic: (category, id) => {
+        this.sfx.play('click');
+        selectCosmetic(this.save, category, id);
+        this.commit();
+      },
       onBuy: (id) => {
         this.sfx.play(buyShopItem(this.save, id) ? 'buy' : 'deny');
         this.commit();
@@ -144,6 +178,15 @@ export class Game {
     if (new URLSearchParams(window.location.search).has('debug')) this.installDebug();
 
     this.world.renderer.setAnimationLoop((ms) => this.frame(ms));
+    // Mode dev : ce bloc est supprimé de la version publiée (import.meta.env.DEV vaut alors false).
+    if (import.meta.env.DEV) {
+      void import('./dev').then(({ DevTools }) => {
+        this.dev = new DevTools(this.storage, document.body, this.state === 'menu', () => this.ui.refresh());
+        // Des prix de coffre réglés lors d'une session précédente s'appliquent tout de suite.
+        this.ui.refresh();
+      });
+    }
+
     void this.load();
   }
 
@@ -159,7 +202,7 @@ export class Game {
       onShoot: (weapon, x, z, angle) => {
         sfx.play('shoot');
         // Petit éclat devant le héros, dans la direction du tir.
-        effects.burst(x + Math.cos(angle) * 0.8, 1, z + Math.sin(angle) * 0.8, MUZZLE_COLORS[weapon] ?? WHITE, 4, 3.5, 0.1);
+        effects.burst(x + Math.cos(angle) * 0.8, 1, z + Math.sin(angle) * 0.8, this.cosmeticTint('projectile') ?? MUZZLE_COLORS[weapon] ?? WHITE, 4, 3.5, 0.1);
       },
       onPulse: (x, z, radius) => {
         effects.ring(x, z, radius, AURA_COLOR, 22, 0.22);
@@ -212,6 +255,12 @@ export class Game {
         effects.shockwave(e.x, e.z, radius, e.type.color);
         effects.ring(e.x, e.z, radius * 0.9, e.type.color, 32, 0.3);
         effects.puff(e.x, 0.4, e.z, e.type.color, 1.4, 6);
+      },
+      onMineBlast: (x, z, radius) => {
+        sfx.play('hit');
+        world.shake(0.12);
+        effects.shockwave(x, z, radius, MINE_COLOR);
+        effects.burst(x, 0.5, z, MINE_COLOR, 14, 7, 0.2);
       },
       onBossFire: (e) => {
         sfx.play('shoot');
@@ -286,11 +335,22 @@ export class Game {
     this.view = next;
   }
 
+  /** Prix des coffres : ceux du jeu, ou 1 et 2 pièces si le mode dev le demande. */
+  private chestPrices(): ChestPrices {
+    return this.dev?.chestPrices() ?? CHEST_PRICES;
+  }
+
   /** Remet la simulation à zéro avec les choix du menu : boutique, arme de départ et difficulté. */
-  private resetRun(run: Run): void {
-    run.reset(startingStats(this.save), {
+  private resetRun(run: Run, useDev = false, amulet: { id: string; level: number } | null = null): void {
+    run.reset(startingStats(this.save, amulet), {
       weapon: this.save.weapon,
       mods: selectedDifficulty(this.save).enemies,
+      style: {
+        projectile: cosmeticColor('projectile', this.save.style.projectile),
+        trail: cosmeticColor('trail', this.save.style.trail),
+      },
+      // Mode dev : niveau et temps de départ choisis (uniquement au lancement d'une vraie partie).
+      ...(useDev ? this.dev?.runSetup() : null),
     });
   }
 
@@ -302,16 +362,23 @@ export class Game {
     this.applyCharacter();
     this.world.setMode('menu');
     this.ui.showMenu();
+    this.dev?.setVisible(true);
     this.state = 'menu';
   }
 
   private startRun(): void {
     if (!this.run) return;
-    this.resetRun(this.run);
+    // L'amulette équipée est consommée : son effet ne vaut que pour cette partie.
+    const amulet = consumeAmulet(this.save);
+    if (amulet) this.commit();
+    this.resetRun(this.run, true, amulet);
+    this.dev?.setVisible(false);
     this.effects.clear();
     this.world.setMode('play');
     this.ui.showGame();
     this.state = 'playing';
+    const worn = amulet ? amuletOf(amulet.id) : undefined;
+    if (worn && amulet) this.ui.showBanner(`${worn.name} ×${amulet.level} : ${worn.describe(amulet.level)}`, 'legend');
   }
 
   /** Met la partie en pause, ou la reprend. Sans effet hors d'une partie en cours. */
@@ -406,6 +473,13 @@ export class Game {
     this.ui.setBossBars(bars);
   }
 
+  /** Couleur de l'apparence choisie dans une catégorie (nouvel objet à chaque appel), ou null pour la couleur d'origine. */
+  private cosmeticTint(category: 'projectile' | 'dust'): THREE.Color | null {
+    const spec = cosmeticColor(category, this.save.style[category]);
+    if (spec === null) return null;
+    return spec === 'rainbow' ? new THREE.Color().setHSL((performance.now() / 1000 * 0.6) % 1, 1, 0.6) : new THREE.Color(spec);
+  }
+
   /** Poussière sous les pas du héros et clignotement quand il est touché. */
   private updateHeroEffects(dt: number, run: Run, heroState: HeroState): void {
     const { player } = run;
@@ -416,7 +490,7 @@ export class Game {
         this.dustTimer -= dt;
         if (this.dustTimer <= 0) {
           this.dustTimer = 0.11;
-          this.effects.puff(player.x, 0.1, player.z, DUST_COLOR, 0.3, 1);
+          this.effects.puff(player.x, 0.1, player.z, this.cosmeticTint('dust') ?? DUST_COLOR, 0.3, 1);
         }
       }
       this.hurtTimer = Math.max(0, this.hurtTimer - dt);
@@ -441,12 +515,14 @@ export class Game {
 
   private finishRun(run: Run): void {
     const multiplier = selectedDifficulty(this.save).gold;
-    const reward = runReward(run.gold, run.time, multiplier);
-    const isRecord = run.time > this.save.bestTime;
+    // Le temps de départ du mode dev ne compte ni pour la récompense ni pour le record.
+    const survived = run.survived;
+    const reward = runReward(run.gold, survived, multiplier);
+    const isRecord = !run.customStart && survived > this.save.bestTime;
     this.save.gold += reward;
-    if (isRecord) this.save.bestTime = Math.floor(run.time);
+    if (isRecord) this.save.bestTime = Math.floor(survived);
     this.commit();
-    this.ui.showGameOver({ time: run.time, kills: run.kills, level: run.level, reward, multiplier, isRecord });
+    this.ui.showGameOver({ time: survived, kills: run.kills, level: run.level, reward, multiplier, isRecord });
     this.state = 'gameover';
   }
 
@@ -456,6 +532,11 @@ export class Game {
       state: () => ({
         state: this.state,
         time: this.run?.time ?? 0,
+        hp: this.run?.player.hp ?? 0,
+        invincible: this.run?.player.invincible ?? false,
+        pending: this.run?.pendingChoices?.length ?? 0,
+        x: this.run?.player.x ?? 0,
+        z: this.run?.player.z ?? 0,
         kills: this.run?.kills ?? 0,
         level: this.run?.level ?? 0,
         enemies: this.run?.enemies.list.length ?? 0,
@@ -467,12 +548,24 @@ export class Game {
         bosses: this.run?.enemies.bossCount ?? 0,
         bossWave: this.run?.bossWave ?? 0,
         pickups: this.run?.pickups.count ?? 0,
+        amulets: { ...this.save.amulets },
+        amulet: this.save.amulet,
+        xpMult: this.run?.player.stats.xpMult ?? 1,
+        style: { ...this.save.style },
+        cosmetics: JSON.parse(JSON.stringify(this.save.cosmetics)) as Record<string, string[]>,
+        savedWeapons: [...this.save.weapons],
         weapon: this.save.weapon,
         weapons: this.run?.weapons.owned ?? [],
         difficulty: this.save.difficulty,
         hasModel: this.view !== null,
       }),
-      kill: () => this.run?.player.takeDamage(1e9),
+      /** Tue le héros. La régénération est coupée : sinon un héros qui en a une serait soigné avant le contrôle de mort et survivrait. */
+      kill: () => {
+        const player = this.run?.player;
+        if (!player) return;
+        player.stats.regen = 0;
+        player.takeDamage(1e9);
+      },
       /** Avance le chronomètre de la partie (pour déclencher une vague de boss). */
       setTime: (t: number) => {
         if (this.run) this.run.time = t;
@@ -494,6 +587,11 @@ export class Game {
         if (!run) return;
         run.level = LEGEND_LEVEL - 1;
         run.xp = run.xpNeeded;
+      },
+      /** Fixe les « dés » des coffres : les valeurs sont lues en boucle à la place du hasard. */
+      chestRandom: (values: number[]) => {
+        let i = 0;
+        this.chestRandom = () => values[i++ % values.length];
       },
       /** Tue tous les boss vivants. */
       killBosses: () => {
