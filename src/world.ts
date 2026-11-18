@@ -34,6 +34,9 @@ export interface PreviewView {
 /** Hauteur du héros dans la scène (voir HERO_HEIGHT dans assets.ts). */
 const PREVIEW_HERO_HEIGHT = 1.9;
 
+/** Hauteur minimale de la caméra : en dessous, le sol (visible d'un seul côté) disparaîtrait. */
+export const MIN_CAMERA_HEIGHT = 0.5;
+
 export class World {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
@@ -156,14 +159,25 @@ export class World {
     this.offset.lerp(this.targetOffset, k);
     this.lookY += (lookTarget - this.lookY) * k;
 
+    // Le sol n'est visible que de dessus : la caméra ne descend jamais dessous (aperçu d'un héros en haut de l'écran).
+    // On la relève et on réoriente l'axe de visée pour que le héros reste au même endroit de l'écran.
+    let cameraY = this.offset.y;
+    let aimY = this.lookY;
+    if (cameraY < MIN_CAMERA_HEIGHT) {
+      const distance = this.offset.z;
+      const heroAngle = Math.atan((PREVIEW_HERO_HEIGHT / 2 - cameraY) / distance) - Math.atan((aimY - cameraY) / distance);
+      cameraY = MIN_CAMERA_HEIGHT;
+      aimY = cameraY + distance * Math.tan(Math.atan((PREVIEW_HERO_HEIGHT / 2 - cameraY) / distance) - heroAngle);
+    }
+
     this.trauma = Math.max(0, this.trauma - dt * 2.5);
     const amplitude = this.trauma * this.trauma * 0.6;
     this.camera.position.set(
       x + this.offset.x + (Math.random() - 0.5) * amplitude,
-      this.offset.y + (Math.random() - 0.5) * amplitude,
+      cameraY + (Math.random() - 0.5) * amplitude,
       z + this.offset.z,
     );
-    this.camera.lookAt(x + this.offset.x, this.lookY, z);
+    this.camera.lookAt(x + this.offset.x, aimY, z);
     this.sun.position.set(x + 10, 20, z + 8);
     this.sun.target.position.set(x, 0, z);
   }

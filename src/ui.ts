@@ -1,7 +1,7 @@
 import { CHARACTERS, DIFFICULTIES, SHOP_ITEMS, exportSave, hasLegend, importSave, shopCost, type SaveData } from './meta';
 import { AMULETS, AMULET_MAX_LEVEL, amuletOf } from './amulets';
 import { countUp } from './anim';
-import { CHEST_BUNDLE, rewardView, type ChestPrices, type ChestReward } from './chests';
+import { CHEST_BUNDLE, rewardView, type ChestPrices, type ChestReward, type ChestTier } from './chests';
 import { REVEAL_TIMING, RevealFlow } from './reveal';
 import { CATEGORIES, CATEGORY_HELP, CATEGORY_LABELS, CATEGORY_WEAPONS, COSMETICS, type CosmeticCategory } from './cosmetics';
 import { WEAPON_PREFIX } from './upgrades';
@@ -34,6 +34,22 @@ const CHEST_ART =
  * Crée l'élément d'une icône : un emoji (texte), ou un dessin SVG si la valeur commence par « <svg ».
  * Les icônes viennent du code du jeu (jamais de l'utilisateur), l'insertion de SVG est donc sûre.
  */
+/** Confettis et étincelles de l'ouverture d'un coffre : plus la rareté est haute, plus il y en a. */
+const CONFETTI_COLORS: Record<ChestTier, string[]> = {
+  common: ['#c9d7f5', '#ffffff', '#8fb0ff'],
+  rare: ['#d8b8ff', '#ffffff', '#a97bff', '#6fe9ff'],
+  legendary: ['#ffd84d', '#ffffff', '#ff9a3d', '#fff27a', '#ff7ad9'],
+  mythic: ['#ff4d8d', '#ffd84d', '#6fe9ff', '#8cff6f', '#a97bff', '#ffffff'],
+};
+const CONFETTI_COUNT: Record<ChestTier, number> = { common: 22, rare: 45, legendary: 80, mythic: 130 };
+const SPARK_COLORS: Record<ChestTier, string[]> = {
+  common: ['#c9d7f5', '#ffffff'],
+  rare: ['#d8b8ff', '#ffffff'],
+  legendary: ['#ffd84d', '#ffffff', '#ff9a3d'],
+  mythic: ['#ff4d8d', '#ffd84d', '#6fe9ff', '#ffffff'],
+};
+const SPARK_COUNT: Record<ChestTier, number> = { common: 18, rare: 30, legendary: 46, mythic: 80 };
+
 function iconElement(className: string, icon: string): HTMLSpanElement {
   const node = make('span', className);
   if (icon.startsWith('<svg')) node.innerHTML = icon;
@@ -73,7 +89,9 @@ export interface UiHandlers {
   /** Prix actuels des coffres (ceux du jeu, ou ceux du mode dev). */
   chestPrices(): ChestPrices;
   /** Un son de l'ouverture des coffres (impact, grondement, éclat, rareté du contenu, suite, récapitulatif). */
-  onChestSound(sound: 'rumble' | 'thud' | 'boom' | 'common' | 'rare' | 'legendary' | 'next' | 'recap'): void;
+  onChestSound(sound: 'rumble' | 'thud' | 'boom' | ChestTier | 'next' | 'recap'): void;
+  /** Le plein écran d'ouverture des coffres s'ouvre (true) ou se ferme (false) : la musique dédiée en dépend. */
+  onChestMusic(on: boolean): void;
   onBuy(id: string): void;
   onToggleSound(): void;
   /** Cadre le héros en entier dans cette zone de l'écran (null : fin de l'aperçu). */
@@ -317,7 +335,7 @@ export class Ui {
       const trying = this.tryHero === c.id;
       const card = make('button', `char-card${selected ? ' selected' : ''}${unlocked ? '' : ' locked'}${trying ? ' trying' : ''}`);
       card.dataset.id = c.id;
-      const status = selected ? 'Choisie' : unlocked ? 'Choisir' : trying ? 'Aperçu' : `🪙 ${c.cost}`;
+      const status = selected ? 'Choisie' : unlocked ? 'Choisir' : trying ? 'Aperçu' : c.chest ? '🎁 Coffres' : `🪙 ${c.cost}`;
       card.append(make('span', 'char-name', c.name), make('span', 'char-desc', c.desc), make('span', 'char-status', status));
       card.addEventListener('click', () => {
         if (unlocked) {
@@ -334,8 +352,9 @@ export class Ui {
     }
     const tried = CHARACTERS.find((c) => c.id === this.tryHero);
     const buy = el<HTMLButtonElement>('btn-buy-hero');
-    buy.classList.toggle('hidden', !tried);
-    if (tried) {
+    // Un héros de coffre ne s'achète pas : pas de bouton, juste l'aperçu et l'indication d'où le trouver.
+    buy.classList.toggle('hidden', !tried || !!tried.chest);
+    if (tried && !tried.chest) {
       buy.textContent = `Acheter ${tried.name} · ${tried.cost} 🪙`;
       buy.disabled = save.gold < tried.cost;
       buy.onclick = () => {
@@ -345,7 +364,8 @@ export class Ui {
     }
 
     const shownHero = CHARACTERS.find((c) => c.id === (this.tryHero ?? save.selected)) ?? CHARACTERS[0];
-    el('hero-desc').textContent = `${shownHero.name} : ${shownHero.desc}`;
+    const hint = shownHero.chest && !save.unlocked.includes(shownHero.id) ? ' (à trouver dans les coffres)' : '';
+    el('hero-desc').textContent = `${shownHero.name} : ${shownHero.desc}${hint}`;
 
     const weapons = el('weapons');
     weapons.replaceChildren();
@@ -594,10 +614,10 @@ private clearChestTimers(): void {
   }
 
   /** Confettis qui tombent sur tout l'écran (plus il y en a, plus le contenu est rare). */
-  private confetti(tier: 'common' | 'rare' | 'legendary'): void {
+  private confetti(tier: ChestTier): void {
     const fx = el('reveal-fx');
-    const palette = tier === 'legendary' ? ['#ffd84d', '#ffffff', '#ff9a3d', '#fff27a', '#ff7ad9'] : tier === 'rare' ? ['#d8b8ff', '#ffffff', '#a97bff', '#6fe9ff'] : ['#c9d7f5', '#ffffff', '#8fb0ff'];
-    const count = tier === 'legendary' ? 80 : tier === 'rare' ? 45 : 22;
+    const palette = CONFETTI_COLORS[tier];
+    const count = CONFETTI_COUNT[tier];
     for (let i = 0; i < count; i++) {
       const piece = make('span', 'confetti');
       piece.style.setProperty('--x', `${Math.random() * 100}%`);
@@ -610,10 +630,10 @@ private clearChestTimers(): void {
   }
 
   /** Étincelles qui jaillissent du centre de l'écran au moment de l'éclat. */
-  private burstSparks(tier: 'common' | 'rare' | 'legendary'): void {
+  private burstSparks(tier: ChestTier): void {
     const fx = el('reveal-fx');
-    const palette = tier === 'legendary' ? ['#ffd84d', '#ffffff', '#ff9a3d'] : tier === 'rare' ? ['#d8b8ff', '#ffffff'] : ['#c9d7f5', '#ffffff'];
-    const count = tier === 'legendary' ? 46 : tier === 'rare' ? 30 : 18;
+    const palette = SPARK_COLORS[tier];
+    const count = SPARK_COUNT[tier];
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const distance = 120 + Math.random() * 220;
@@ -641,6 +661,7 @@ private clearChestTimers(): void {
     this.revealRewards = rewards;
     this.revealFlow = new RevealFlow(rewards.length);
     this.reveal.classList.remove('hidden');
+    this.handlers.onChestMusic(true);
     el('reveal-actions').classList.add('hidden');
     this.showRevealChest();
   }
@@ -722,7 +743,7 @@ private clearChestTimers(): void {
     this.reveal.classList.remove('rumbling');
     el('reveal-hint').textContent = '';
     const flash = el('reveal-flash');
-    flash.className = view.tier === 'legendary' ? 'go gold' : 'go';
+    flash.className = view.tier === 'mythic' ? 'go mythic' : view.tier === 'legendary' ? 'go gold' : 'go';
     this.reveal.classList.add('quake');
     this.later(520, () => this.reveal.classList.remove('quake'));
     this.burstSparks(view.tier);
@@ -841,6 +862,7 @@ private clearChestTimers(): void {
     el('reveal-fx').replaceChildren();
     this.revealFlow = null;
     this.reveal.classList.add('hidden');
+    this.handlers.onChestMusic(false);
     this.revealStage.replaceChildren();
     this.refresh();
   }

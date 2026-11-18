@@ -80,6 +80,8 @@ export class Game {
   private previewing = false;
   /** Héros regardé dans l'aperçu sans être acheté : il remplace un moment le héros choisi à l'écran. */
   private tryHero: string | null = null;
+  /** Le plein écran d'ouverture des coffres est affiché : la musique des coffres remplace celle du menu. */
+  private chestOpening = false;
   /** Source de hasard des coffres (remplaçable par les tests de bout en bout). */
   private chestRandom: () => number = Math.random;
   /** Outils du mode dev (version de développement uniquement). */
@@ -136,9 +138,12 @@ export class Game {
         return rewards;
       },
       chestPrices: () => this.chestPrices(),
+      onChestMusic: (on) => {
+        this.chestOpening = on;
+      },
       onChestSound: (sound) => {
         // Plus le contenu est rare, plus le son est triomphal.
-        const names = { rumble: 'rumble', thud: 'thud', boom: 'boom', common: 'coin', rare: 'levelup', legendary: 'legend', next: 'click', recap: 'ready' } as const;
+        const names = { rumble: 'rumble', thud: 'thud', boom: 'boom', common: 'coin', rare: 'levelup', legendary: 'legend', mythic: 'mythic', next: 'click', recap: 'ready' } as const;
         this.sfx.play(names[sound]);
       },
       onEquipAmulet: (id, level) => {
@@ -479,7 +484,7 @@ export class Game {
   /** Choisit la musique : menu, partie, ou boss tant qu'il y en a un ; atténuée en pause et pendant les choix. */
   private updateMusic(run: Run): void {
     const inGame = this.state === 'playing' || this.state === 'paused' || this.state === 'levelup' || this.state === 'dying';
-    this.music.setTrack(inGame ? (run.enemies.bossCount > 0 ? 'boss' : 'game') : 'menu');
+    this.music.setTrack(inGame ? (run.enemies.bossCount > 0 ? 'boss' : 'game') : this.chestOpening ? 'chest' : 'menu');
     this.music.setDuck(this.state === 'paused' || this.state === 'levelup' || this.state === 'dying');
   }
 
@@ -621,7 +626,7 @@ export class Game {
         const head = new THREE.Vector3(player.x, 1.9, player.z).project(this.world.camera);
         const feet = new THREE.Vector3(player.x, 0, player.z).project(this.world.camera);
         const toY = (v: THREE.Vector3) => ((1 - v.y) / 2) * window.innerHeight;
-        return { top: toY(head), bottom: toY(feet), x: ((head.x + 1) / 2) * window.innerWidth };
+        return { top: toY(head), bottom: toY(feet), x: ((head.x + 1) / 2) * window.innerWidth, cameraY: this.world.camera.position.y };
       },
       /** Tue le héros. La régénération est coupée : sinon un héros qui en a une serait soigné avant le contrôle de mort et survivrait. */
       kill: () => {

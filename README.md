@@ -107,7 +107,12 @@ Dans la **🎁 Boutique** (onglet *Coffres*), on peut ouvrir un coffre pour **10
 | Arme exclusive aux coffres | ~1 % | Introuvable en boutique ; elle est un peu plus forte que les autres armes. Elle sème des mines **en marchant** (rester sur place n'en pose pas). Apparaît au menu une fois trouvée. |
 | Amulette | ~38 % | Effet pour **une seule partie** : elle est consommée au lancement, puis **déséquipée** même s'il en reste (il faut la rééquiper pour la partie suivante). Chaque exemplaire en plus la renforce (jusqu'à 3 utilisés d'un coup). |
 | Apparence | ~32 % | Couleur des projectiles, traînée derrière eux, poussière sous les pas. Jamais deux fois la même. |
-| Pièces | ~29 % | De 200 à 10 000 pièces, les petits montants étant les plus fréquents. |
+| Héros exclusif aux coffres | 5 % | **Pirate** ou **Lis**, tirés au hasard parmi ceux qu'on n'a pas encore (jamais deux fois le même) ; ils ne s'achètent pas. Une fois les deux trouvés, ce tirage donne des pièces. |
+| Pièces | ~24 % | De 200 à 10 000 pièces, les petits montants étant les plus fréquents. |
+
+Pendant l'ouverture en plein écran, la **musique des coffres** (Sol majeur, entraînante : basse « oom-pah », accords à contretemps, charleston) remplace celle du menu, puis le menu la retrouve à la fermeture.
+
+**Raretés** : la rareté de la carte décide seule du son, du flash et des confettis (deux contenus de même rareté ont les mêmes). *Commune* : pièces de moins de 1 000. *Rare* : amulettes, apparences, pièces de 1 000 à moins de 3 000. *Légendaire* : héros exclusifs, pièces de 3 000 et plus (jackpot). *Mythique* : l'arme exclusive, la plus rare (~1 %), avec sa fanfare, ses couleurs irisées et le plus de confettis.
 
 **🎒 Collection** (au menu) : trois onglets. *Héros* : on choisit (ou on achète) son personnage. *Apparences* : couleurs des projectiles, traînées et poussière trouvées dans les coffres. *Amulettes* : on équipe l'amulette de la prochaine partie (et son niveau, selon le nombre d'exemplaires). Amulettes : Œil de sage (XP), Cœur de pierre (PV), Bourse sans fond (pièces), Plume de vent (vitesse), Croc de loup (dégâts), Pierre tourbillon (portée de ramassage).
 
@@ -117,7 +122,7 @@ Dans la **🎁 Boutique** (onglet *Coffres*), on peut ouvrir un coffre pour **10
 - **Armes** : à débloquer avec de l'or (voir ci-dessus).
 - **Boutique** (menu principal, onglet *Améliorations* ; l'onglet *Coffres* ouvre les coffres) : sept améliorations permanentes à plusieurs niveaux. Le prix d'un niveau monte de 60 % à chaque niveau (80 % pour Vitalité et Puissance, qui coûtent près de 4 000 à 5 000 pièces au dernier niveau) : environ 24 000 pièces pour tout acheter.
 - **Repères d'économie** : un débutant gagne environ 1 000 pièces par partie, un bon joueur environ 10 000. Les prix sont réglés pour que la boutique prenne une vingtaine de parties à un débutant et deux ou trois à un bon joueur, et que les coffres (1 000 pièces) soient le grand puits à pièces de la fin de jeu.
-- **Héros** (collection, onglet *Héros*) : Ombre (gratuit, le héros d'origine), Bolt (1 000 pièces), Pip (2 500), Anne (3 000), Sam (3 500), Pirate (4 000), Lis (4 500) et Matt (5 000). Ils changent l'aspect du héros, sans effet sur le jeu.
+- **Héros** (collection, onglet *Héros*) : Ombre (gratuit, le héros d'origine), Anne (1 000 pièces), Sam (2 500), Bolt (3 000), Matt (3 500) et Pip (4 000), plus Pirate et Lis qu'on ne trouve que dans les coffres (5 % de chances par coffre). Ils changent l'aspect du héros, sans effet sur le jeu.
 
 La sauvegarde est stockée dans le navigateur (`localStorage`). Elle est donc propre à chaque navigateur et à chaque appareil, et disparaît si les données du site sont effacées.
 
@@ -146,7 +151,7 @@ Les réglages sont conservés d'une session à l'autre, séparément de la sauve
 | `npm run test:watch` | Les mêmes, relancés à chaque modification | continu |
 | `npm run test:e2e` | Compile le jeu puis le joue dans Chrome sans fenêtre, en format PC et mobile | ~2 min |
 | `npm run test:e2e:mobile` | Joue au doigt sur quatre tailles de téléphone, à la verticale puis à l'horizontale, et fait pivoter l'appareil en pleine partie | ~1 min |
-| `npm run test:e2e:texts` | Sur de petits écrans (320, 360 px, paysage) : aucun texte ne dépasse de son cadre ni de l'écran (armes, héros, amulettes, niveaux, coffres, pause, fin de partie), même avec de très grands nombres ; le cœur de la barre de vie ne recouvre pas les PV ; les cases d'armes sont alignées | ~3 min |
+| `npm run test:e2e:texts` | Sur de petits écrans (320, 360 px, paysage) : aucun texte ne dépasse de son cadre ni de l'écran (armes, héros, amulettes, niveaux, coffres, pause, fin de partie), même avec de très grands nombres ; le cœur de la barre de vie ne recouvre pas les PV ; les cases d'armes et les quatre difficultés sont alignées | ~3 min |
 | `npm run test:e2e:platforms` | Émule deux iPhone (dont un ancien, sans `AudioContext`) et deux Android : icônes identiques (pièce jaune, aucun emoji laissé au système), musique qui démarre au premier geste, partie au doigt, boss, coffre. Chrome fait tourner le tout : ce n'est pas un essai sur un vrai iPhone | ~1 min |
 | `npm run test:all` | Types + tests unitaires + test de bout en bout | ~2 min |
 
@@ -182,7 +187,7 @@ Réglage à faire une seule fois sur GitHub : *Settings → Pages → Source : G
 | `index.html` | Page, HUD et écrans (menu, boutique, niveau, fin de partie) |
 | `src/main.ts` | Point d'entrée |
 | `src/game.ts` | Chef d'orchestre : relie simulation, rendu, interface, sons et sauvegarde |
-| `src/music.ts` | Musique de fond synthétisée (menu, partie, boss) : notes en données pures + lecteur Web Audio |
+| `src/music.ts` | Musique de fond synthétisée (menu, partie, boss, ouverture des coffres) : notes en données pures + lecteur Web Audio |
 | `src/emoji.ts` | Remplace les emojis du texte par des images Twemoji, pour des icônes identiques sur tous les appareils |
 | `src/run.ts` | Simulation d'une partie, sans affichage (c'est elle que les tests font tourner) |
 | `src/player.ts` | État et caractéristiques du héros |
@@ -214,7 +219,7 @@ Réglage à faire une seule fois sur GitHub : *Settings → Pages → Source : G
 - **Amulette** : une entrée dans `AMULETS` (`src/amulets.ts`) ; **apparence** : une entrée dans `COSMETICS` (`src/cosmetics.ts`) ; **arme de coffre** : une arme avec `chest: true` dans `WEAPONS`.
 - **Boss** : un type avec `boss: true` dans `DEFS` (`src/enemies.ts`) ; la cadence et le plafond sont dans `src/run.ts` (`BOSS_INTERVAL`, `MAX_BOSSES`).
 - **Amélioration permanente** : une entrée dans `SHOP_ITEMS` (`src/meta.ts`).
-- **Héros** : une entrée dans `CHARACTERS` (`src/meta.ts`) et son modèle dans `public/models/`. Le modèle doit contenir des animations nommées `Idle`, `Run` (ou `Running`) et `Death`. Les modèles doivent avoir le même style que les autres (personnages cartoon, grosse tête). Pour l'alléger et retirer l'arme tenue en main, utiliser `tools/slim-glb.cjs` (usage en tête du fichier). Chaque nouveau héros coûte un peu plus cher que le précédent.
+- **Héros** : une entrée dans `CHARACTERS` (`src/meta.ts`) et son modèle dans `public/models/`. Le modèle doit contenir des animations nommées `Idle`, `Run` (ou `Running`) et `Death`. Les modèles doivent avoir le même style que les autres (personnages cartoon, grosse tête). Pour l'alléger et retirer l'arme tenue en main, utiliser `tools/slim-glb.cjs` (usage en tête du fichier). Chaque nouveau héros coûte un peu plus cher que le précédent ; avec `chest: true` (et `cost: 0`), il ne s'achète pas et sort des coffres (`CHEST_ODDS.character` dans `src/chests.ts`).
 - **Ennemi** : une entrée dans `DEFS` (`src/enemies.ts`), et son modèle dans `ENEMY_MODELS` (`src/assets.ts`).
 
 ### Comment des centaines d'ennemis animés restent fluides

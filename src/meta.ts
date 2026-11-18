@@ -80,18 +80,22 @@ export interface Character {
   /** Fichier du modèle 3D dans public/models. */
   model: string;
   cost: number;
+  /** Héros exclusif aux coffres : il ne s'achète pas, il faut le trouver. */
+  chest?: boolean;
 }
 
 export const CHARACTERS: Character[] = [
   { id: 'ombre', name: 'Ombre', desc: 'Le héros d’origine', model: 'hero-ombre.glb', cost: 0 },
-  { id: 'bolt', name: 'Bolt', desc: 'Robot bricoleur', model: 'hero-bolt.glb', cost: 1000 },
-  { id: 'pip', name: 'Pip', desc: 'Mascotte bondissante', model: 'hero-pip.glb', cost: 2500 },
-  // Chaque nouveau héros coûte 500 pièces de plus que le précédent.
-  { id: 'anne', name: 'Anne', desc: 'Exploratrice aux longues tresses', model: 'hero-anne.glb', cost: 3000 },
-  { id: 'sam', name: 'Sam', desc: 'Bonnet, veste à capuche et baskets', model: 'hero-sam.glb', cost: 3500 },
-  { id: 'pirate', name: 'Pirate', desc: 'Capitaine à la barbe rousse et son perroquet', model: 'hero-pirate.glb', cost: 4000 },
-  { id: 'lis', name: 'Lis', desc: 'Punk à la crête bleue', model: 'hero-lis.glb', cost: 4500 },
-  { id: 'matt', name: 'Matt', desc: 'Baroudeur à la veste orange', model: 'hero-matt.glb', cost: 5000 },
+  // Les prix des héros à acheter montent avec la liste : le premier coûte 1 000 pièces (une partie de débutant), le deuxième
+  // 2 500, puis chaque nouveau héros coûte 500 pièces de plus que le précédent. Le dernier est le plus cher.
+  // Pirate et Lis ne s'achètent pas (`chest: true`) : ils ne sortent que des coffres.
+  { id: 'anne', name: 'Anne', desc: 'Exploratrice aux longues tresses', model: 'hero-anne.glb', cost: 1000 },
+  { id: 'sam', name: 'Sam', desc: 'Bonnet, veste à capuche et baskets', model: 'hero-sam.glb', cost: 2500 },
+  { id: 'bolt', name: 'Bolt', desc: 'Robot bricoleur', model: 'hero-bolt.glb', cost: 3000 },
+  { id: 'pirate', name: 'Pirate', desc: 'Capitaine à la barbe rousse et son perroquet', model: 'hero-pirate.glb', cost: 0, chest: true },
+  { id: 'lis', name: 'Lis', desc: 'Punk à la crête bleue', model: 'hero-lis.glb', cost: 0, chest: true },
+  { id: 'matt', name: 'Matt', desc: 'Baroudeur à la veste orange', model: 'hero-matt.glb', cost: 3500 },
+  { id: 'pip', name: 'Pip', desc: 'Mascotte bondissante', model: 'hero-pip.glb', cost: 4000 },
 ];
 
 /** Anciens identifiants de héros (renommés) : une sauvegarde qui les contient est mise à jour. */
@@ -345,7 +349,8 @@ export function chooseCharacter(save: SaveData, id: string): 'selected' | 'bough
     save.selected = id;
     return 'selected';
   }
-  if (save.gold < character.cost) return 'denied';
+  // Un héros de coffre ne s'achète pas : il faut le trouver.
+  if (character.chest || save.gold < character.cost) return 'denied';
   save.gold -= character.cost;
   save.unlocked.push(id);
   save.selected = id;

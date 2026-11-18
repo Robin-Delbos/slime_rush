@@ -724,14 +724,17 @@ h2 {
   background: rgba(70, 60, 130, 0.9);
 }
 
+/* Icône et nom toujours sur une seule ligne (le multiplicateur d'or est sur la suivante) : sur petit écran on réduit le texte. */
 .diff-name {
-  font-size: 14px;
+  font-size: clamp(10px, 3.3vw, 14px);
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .diff-gold {
-  font-size: 11.5px;
+  font-size: clamp(10px, 3vw, 11.5px);
   font-weight: 700;
+  white-space: nowrap;
   color: #ffe14d;
 }
 
@@ -1761,6 +1764,12 @@ h2 {
   --ray: rgba(255, 226, 120, 0.85);
 }
 
+/* Mythique : l'arme exclusive (~1 %), fond rose et rayons irisés. */
+#overlay-reveal[data-tier='mythic'] {
+  --glow: #c2185b;
+  --ray: rgba(255, 170, 230, 0.9);
+}
+
 #overlay-reveal.hidden {
   display: none;
 }
@@ -1818,6 +1827,11 @@ h2 {
 #reveal-flash.go.gold {
   background: radial-gradient(circle at 50% 44%, #fff, rgba(255, 214, 90, 0.75) 40%, transparent 78%);
   animation-duration: 1s;
+}
+
+#reveal-flash.go.mythic {
+  background: radial-gradient(circle at 50% 44%, #fff, rgba(255, 120, 200, 0.8) 38%, rgba(120, 220, 255, 0.5) 58%, transparent 80%);
+  animation-duration: 1.4s;
 }
 
 @keyframes reveal-flash {
@@ -2136,6 +2150,24 @@ h2 {
     legend-card-glow 1.3s ease-in-out 0.65s infinite;
 }
 
+.reveal-card.mythic {
+  background: linear-gradient(135deg, #ffe0f4, #d2c2ff 45%, #b9f0ff);
+  box-shadow:
+    0 8px 0 #9c1c6b,
+    0 0 90px rgba(255, 110, 200, 1);
+  animation:
+    reveal-card-in 0.65s cubic-bezier(0.2, 1.4, 0.4, 1) both,
+    mythic-card-glow 1s ease-in-out 0.65s infinite;
+}
+
+@keyframes mythic-card-glow {
+  50% {
+    box-shadow:
+      0 8px 0 #9c1c6b,
+      0 0 150px rgba(120, 220, 255, 1);
+  }
+}
+
 .reveal-tier-label {
   position: absolute;
   top: -20px;
@@ -2163,6 +2195,11 @@ h2 {
 
 .reveal-card.legendary .reveal-tier-label {
   background: linear-gradient(180deg, #ff9a3d, #e0561c);
+  font-size: 17px;
+}
+
+.reveal-card.mythic .reveal-tier-label {
+  background: linear-gradient(90deg, #ff4d8d, #8a4fd6 55%, #2bb8e0);
   font-size: 17px;
 }
 
@@ -2271,6 +2308,11 @@ h2 {
 .reveal-mini.legendary {
   background: linear-gradient(180deg, #fff9d6, #ffc13d);
   box-shadow: 0 0 24px rgba(255, 214, 90, 0.9);
+}
+
+.reveal-mini.mythic {
+  background: linear-gradient(135deg, #ffe0f4, #d2c2ff 45%, #b9f0ff);
+  box-shadow: 0 0 28px rgba(255, 110, 200, 0.95);
 }
 
 .reveal-mini-icon {

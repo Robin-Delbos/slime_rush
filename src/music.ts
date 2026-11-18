@@ -4,10 +4,11 @@
  *
  * - menu : calme et lumineuse (Do majeur, 84 pulsations par minute) ;
  * - game : entraînante (La mineur, 132) ;
- * - boss : plus sombre et plus rapide (Mi mineur, 152), quand un boss est là.
+ * - boss : plus sombre et plus rapide (Mi mineur, 152), quand un boss est là ;
+ * - chest : entraînante, un air de chasse au trésor (Sol majeur, 126), pendant l'ouverture des coffres.
  */
 
-export type TrackName = 'menu' | 'game' | 'boss';
+export type TrackName = 'menu' | 'game' | 'boss' | 'chest';
 export type Voice = 'pad' | 'bass' | 'lead' | 'arp' | 'kick' | 'hat';
 
 export interface NoteEvent {
@@ -133,10 +134,56 @@ function bossTrack(): Track {
   return { name: 'boss', bpm: 152, beats: bars.length * BAR, events };
 }
 
+/**
+ * Coffres : Sol majeur, Do, Ré, Mi mineur ; un air de chasse au trésor, joyeux et sautillant : basse « oom-pah » qui
+ * saute de la fondamentale à la quinte, accords frappés à contretemps, charleston sur chaque croche, mélodie courte
+ * et syncopée. Pas de nappes (contrairement au menu) : tout est rythmé.
+ */
+function chestTrack(): Track {
+  const events: NoteEvent[] = [];
+  const bars: { root: number; chord: number[] }[] = [
+    { root: 43, chord: [55, 59, 62] }, // Sol
+    { root: 48, chord: [55, 60, 64] }, // Do
+    { root: 50, chord: [57, 62, 66] }, // Ré
+    { root: 50, chord: [57, 62, 66] }, // Ré
+    { root: 40, chord: [55, 59, 64] }, // Mi mineur
+    { root: 48, chord: [55, 60, 64] }, // Do
+    { root: 50, chord: [57, 62, 66] }, // Ré
+    { root: 50, chord: [57, 62, 66] }, // Ré, qui ramène au Sol
+  ];
+  // Mélodie : [pulsation dans la mesure, note, durée] pour chaque mesure.
+  const melody: [number, number, number][][] = [
+    [[0, 79, 0.5], [0.5, 83, 0.5], [1, 86, 1], [2, 83, 0.5], [2.5, 86, 0.5], [3, 88, 1]],
+    [[0, 88, 0.5], [0.5, 84, 0.5], [1, 79, 1], [2, 84, 1], [3, 83, 0.5], [3.5, 81, 0.5]],
+    [[0, 81, 0.5], [0.5, 86, 0.5], [1, 86, 1], [2, 81, 0.5], [2.5, 86, 0.5], [3, 90, 1]],
+    [[0, 88, 0.5], [0.5, 86, 0.5], [1, 83, 1], [2, 81, 1], [3, 78, 0.5], [3.5, 81, 0.5]],
+    [[0, 83, 0.5], [0.5, 88, 0.5], [1, 91, 1], [2, 88, 0.5], [2.5, 83, 0.5], [3, 88, 1]],
+    [[0, 84, 0.5], [0.5, 88, 0.5], [1, 91, 1], [2, 88, 1], [3, 84, 0.5], [3.5, 79, 0.5]],
+    [[0, 86, 0.5], [0.5, 90, 0.5], [1, 93, 1], [2, 90, 0.5], [2.5, 86, 0.5], [3, 81, 1]],
+    [[0, 83, 0.5], [0.5, 86, 0.5], [1, 90, 1], [2, 86, 0.5], [2.5, 83, 0.5], [3, 79, 1]],
+  ];
+  bars.forEach(({ root, chord }, i) => {
+    const start = i * BAR;
+    // Oom-pah : fondamentale, quinte, fondamentale, quinte.
+    for (let b = 0; b < 4; b++) note(events, 'bass', start + b, 0.45, b % 2 === 0 ? root : root + 7, 0.55);
+    // Grosse caisse sur les temps 1 et 3, avec une relance avant la mesure suivante toutes les quatre mesures.
+    note(events, 'kick', start, 0.3, 36, 0.8);
+    note(events, 'kick', start + 2, 0.3, 36, 0.8);
+    if (i % 4 === 3) note(events, 'kick', start + 3.5, 0.2, 36, 0.55);
+    // Charleston sur chaque croche, plus appuyé sur les temps 2 et 4.
+    for (let e = 0; e < 8; e++) note(events, 'hat', start + e * 0.5, 0.1, 0, e % 4 === 2 ? 0.4 : 0.25);
+    // Accords frappés à contretemps.
+    for (let b = 0; b < 4; b++) for (const midi of chord) note(events, 'arp', start + b + 0.5, 0.25, midi, 0.16);
+    for (const [beat, midi, duration] of melody[i]) note(events, 'lead', start + beat, duration * 0.8, midi, 0.42);
+  });
+  return { name: 'chest', bpm: 126, beats: bars.length * BAR, events };
+}
+
 export const TRACKS: Record<TrackName, Track> = {
   menu: menuTrack(),
   game: gameTrack(),
   boss: bossTrack(),
+  chest: chestTrack(),
 };
 
 /**

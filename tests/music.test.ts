@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DUCK_RATIO, MUSIC_VOLUME, MusicPlayer, TRACKS, eventsInRange, loopSeconds, midiToHz, type AudioHandle, type TrackName, type Voice } from '../src/music';
 
-const NAMES: TrackName[] = ['menu', 'game', 'boss'];
+const NAMES: TrackName[] = ['menu', 'game', 'boss', 'chest'];
 
 describe('Musique : les notes', () => {
   it('convertit les notes MIDI en fréquences', () => {
@@ -11,7 +11,7 @@ describe('Musique : les notes', () => {
     expect(midiToHz(60)).toBeCloseTo(261.63, 1);
   });
 
-  it('a une piste pour le menu, la partie et les boss', () => {
+  it('a une piste pour le menu, la partie, les boss et l’ouverture des coffres', () => {
     expect(Object.keys(TRACKS).sort()).toEqual([...NAMES].sort());
     for (const name of NAMES) expect(TRACKS[name].name).toBe(name);
   });
@@ -19,6 +19,9 @@ describe('Musique : les notes', () => {
   it('accélère du calme du menu à la tension du boss', () => {
     expect(TRACKS.menu.bpm).toBeLessThan(TRACKS.game.bpm);
     expect(TRACKS.game.bpm).toBeLessThan(TRACKS.boss.bpm);
+    // La musique des coffres est entre les deux : mystérieuse, sans la nervosité de la partie.
+    expect(TRACKS.chest.bpm).toBeGreaterThan(TRACKS.menu.bpm);
+    expect(TRACKS.chest.bpm).toBeLessThan(TRACKS.game.bpm);
   });
 
   it('boucle sur un nombre entier de mesures, assez longues pour ne pas lasser', () => {
@@ -55,6 +58,37 @@ describe('Musique : les notes', () => {
     expect(voices('menu')).toEqual(new Set(['pad', 'bass', 'lead']));
     for (const name of ['game', 'boss'] as const) {
       for (const voice of ['bass', 'kick', 'hat', 'arp', 'lead'] as const) expect(voices(name).has(voice), `${name} : ${voice}`).toBe(true);
+    }
+  });
+
+  it('donne aux coffres une musique à part, entraînante : basse oom-pah, accords à contretemps, charleston, sans nappes', () => {
+    const chest = TRACKS.chest.events;
+    const voices = new Set<Voice>(chest.map((e) => e.voice));
+    expect(voices).toEqual(new Set(['bass', 'kick', 'hat', 'arp', 'lead']));
+    // Pas de nappes douces comme au menu.
+    expect(voices.has('pad')).toBe(false);
+    // Grosse caisse sur les temps 1 et 3 de chaque mesure (plus une relance avant la mesure suivante).
+    const kicks = chest.filter((e) => e.voice === 'kick').map((e) => e.beat);
+    for (let bar = 0; bar < TRACKS.chest.beats / 4; bar++) {
+      expect(kicks, `mesure ${bar}`).toContain(bar * 4);
+      expect(kicks, `mesure ${bar}`).toContain(bar * 4 + 2);
+    }
+    // Un charleston sur chaque croche.
+    expect(chest.filter((e) => e.voice === 'hat').length).toBe(TRACKS.chest.beats * 2);
+    // Les accords sont frappés à contretemps : jamais sur un temps franc.
+    for (const e of chest.filter((n) => n.voice === 'arp')) expect(e.beat % 1, `accord @${e.beat}`).toBe(0.5);
+    // Une mélodie différente de celles du menu et de la partie.
+    const melody = (name: TrackName) => TRACKS[name].events.filter((e) => e.voice === 'lead').map((e) => e.midi).join();
+    expect(melody('chest')).not.toBe(melody('menu'));
+    expect(melody('chest')).not.toBe(melody('game'));
+  });
+
+  it('rend les coffres plus vifs que le menu, sans égaler la partie, et en majeur', () => {
+    expect(TRACKS.chest.bpm).toBeGreaterThanOrEqual(120);
+    // Mélodie et accords restent dans la gamme de Sol majeur (degrés 0, 2, 4, 5, 7, 9, 11 au-dessus du Sol) : pas de fausse note.
+    const scale = new Set([0, 2, 4, 5, 7, 9, 11]);
+    for (const e of TRACKS.chest.events.filter((n) => n.voice === 'lead' || n.voice === 'arp')) {
+      expect(scale.has((e.midi - 7 + 120) % 12), `note ${e.midi}`).toBe(true);
     }
   });
 
@@ -226,6 +260,17 @@ describe('Musique : le lecteur', () => {
     expect(log.targets.some((t) => t.value === 0)).toBe(true);
     player.setTrack('boss');
     expect(player.current).toBe('boss');
+  });
+
+  it('passe du menu à la musique des coffres, puis revient au menu, en fondu', () => {
+    const { handle, log } = fakeAudio();
+    const player = new MusicPlayer(() => handle);
+    player.setTrack('menu');
+    player.setTrack('chest');
+    expect(player.current).toBe('chest');
+    expect(log.targets.some((t) => t.value === 0)).toBe(true);
+    player.setTrack('menu');
+    expect(player.current).toBe('menu');
   });
 
   it('s’arrête quand on demande le silence', () => {

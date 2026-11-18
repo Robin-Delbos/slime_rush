@@ -339,13 +339,13 @@ describe('Équilibre des prix', () => {
   it('fait payer les apparences comme des puits à pièces', () => {
     expect(CHARACTERS.map((c) => [c.id, c.cost])).toEqual([
       ['ombre', 0],
-      ['bolt', 1000],
-      ['pip', 2500],
-      ['anne', 3000],
-      ['sam', 3500],
-      ['pirate', 4000],
-      ['lis', 4500],
-      ['matt', 5000],
+      ['anne', 1000],
+      ['sam', 2500],
+      ['bolt', 3000],
+      ['pirate', 0],
+      ['lis', 0],
+      ['matt', 3500],
+      ['pip', 4000],
     ]);
   });
 
@@ -360,7 +360,7 @@ describe('Équilibre des prix', () => {
 
 describe('Personnages', () => {
   it('a un personnage gratuit débloqué par défaut', () => {
-    const free = CHARACTERS.filter((c) => c.cost === 0).map((c) => c.id);
+    const free = CHARACTERS.filter((c) => c.cost === 0 && !c.chest).map((c) => c.id);
     expect(free).toEqual(['ombre']);
     expect(defaultSave().unlocked).toEqual(free);
     expect(startingStats(defaultSave())).toEqual(baseStats());
@@ -467,31 +467,46 @@ describe('Récompense de fin de partie', () => {
 });
 
 describe('Personnages', () => {
-  it('propose huit héros, tous avec leur modèle 3D distinct', () => {
-    expect(CHARACTERS.map((c) => c.id)).toEqual(['ombre', 'bolt', 'pip', 'anne', 'sam', 'pirate', 'lis', 'matt']);
+  it('propose huit héros, tous avec leur modèle 3D distinct (Bolt en 4ᵉ position, Pip en dernier)', () => {
+    expect(CHARACTERS.map((c) => c.id)).toEqual(['ombre', 'anne', 'sam', 'bolt', 'pirate', 'lis', 'matt', 'pip']);
     const models = CHARACTERS.map((c) => c.model);
     expect(new Set(models).size).toBe(models.length);
     for (const model of models) expect(model).toMatch(/^hero-[a-z]+\.glb$/);
   });
 
   it('fait payer chaque héros ajouté un peu plus cher que le précédent', () => {
-    const added = ['pip', 'anne', 'sam', 'pirate', 'lis', 'matt'].map((id) => CHARACTERS.find((c) => c.id === id)!.cost);
+    const added = ['sam', 'bolt', 'matt', 'pip'].map((id) => CHARACTERS.find((c) => c.id === id)!.cost);
     for (let i = 1; i < added.length; i++) expect(added[i], `prix du héros n°${i + 1}`).toBeGreaterThan(added[i - 1]);
-    // Et toute la liste monte avec les prix : le plus cher est le dernier.
-    const costs = CHARACTERS.map((c) => c.cost);
+    // Et tous les héros à acheter montent avec la liste : le plus cher est le dernier.
+    const costs = CHARACTERS.filter((c) => !c.chest && c.id !== 'ombre').map((c) => c.cost);
     expect([...costs].sort((a, b) => a - b)).toEqual(costs);
+  });
+
+  it('réserve Pirate et Lis aux coffres : ils ne s’achètent à aucun prix', () => {
+    expect(CHARACTERS.filter((c) => c.chest).map((c) => c.id)).toEqual(['pirate', 'lis']);
+    const save = defaultSave();
+    save.gold = 1e9;
+    for (const id of ['pirate', 'lis']) {
+      expect(chooseCharacter(save, id)).toBe('denied');
+      expect(save.unlocked).not.toContain(id);
+    }
+    expect(save.gold).toBe(1e9);
+    // Une fois trouvés dans un coffre, ils se choisissent gratuitement.
+    save.unlocked.push('pirate');
+    expect(chooseCharacter(save, 'pirate')).toBe('selected');
+    expect(save.gold).toBe(1e9);
   });
 
   it('ne donne que le premier héros au départ, les autres s’achètent', () => {
     const save = defaultSave();
     expect(save.unlocked).toEqual(['ombre']);
-    save.gold = 2999;
+    save.gold = 999;
     expect(chooseCharacter(save, 'anne')).toBe('denied');
-    save.gold = 3000;
+    save.gold = 1000;
     expect(chooseCharacter(save, 'anne')).toBe('bought');
     expect(save.gold).toBe(0);
     expect(save.selected).toBe('anne');
-    save.gold = 3500;
+    save.gold = 2500;
     expect(chooseCharacter(save, 'sam')).toBe('bought');
     expect(save.selected).toBe('sam');
     // Une fois achetés, on peut revenir à un héros sans repayer.

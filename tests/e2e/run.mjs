@@ -200,9 +200,9 @@ async function scenario(page, url, viewport) {
   check((await page.text('#weapon-desc')).startsWith('Carabine'), 'la description de l’arme choisie s’affiche sous les armes');
   await page.click('#btn-collection');
   check(await page.visible('#overlay-collection') && (await page.visible('#panel-heroes')) && !(await page.visible('#panel-styles')), 'la collection s’ouvre sur l’onglet des héros');
-  await page.click('.char-card[data-id="bolt"]');
+  await page.click('.char-card[data-id="anne"]');
   check((await page.game()).selected === 'ombre', 'sans or, un héros payant reste verrouillé');
-  check((await page.game()).trying === 'bolt' && (await page.visible('#btn-buy-hero')) && (await page.eval(`document.querySelector('#btn-buy-hero').disabled`)), 'cliquer sur un héros à acheter le montre, avec un bouton « Acheter » grisé faute de pièces');
+  check((await page.game()).trying === 'anne' && (await page.visible('#btn-buy-hero')) && (await page.eval(`document.querySelector('#btn-buy-hero').disabled`)), 'cliquer sur un héros à acheter le montre, avec un bouton « Acheter » grisé faute de pièces');
   await page.click('#btn-collection-back');
   check((await page.game()).trying === null, 'quitter la collection remet le héros choisi à l’écran');
   await page.click('.weapon-card[data-id="aura"]');
@@ -236,15 +236,15 @@ async function scenario(page, url, viewport) {
 
   // --- Héros (dans la collection) ---
   await page.click('#btn-collection');
-  await page.click('.char-card[data-id="bolt"]');
+  await page.click('.char-card[data-id="anne"]');
   check((await page.game()).selected === 'ombre' && goldOf(await page.text('#menu-gold')) === 2980, 'cliquer sur un héros abordable ne l’achète pas : on le voit d’abord');
-  check((await page.game()).trying === 'bolt' && (await page.text('#hero-desc')).startsWith('Bolt'), 'le héros à acheter est montré dans l’aperçu, avec sa description');
-  check((await page.text('#btn-buy-hero')).includes('Bolt') && !(await page.eval(`document.querySelector('#btn-buy-hero').disabled`)), 'le bouton « Acheter » propose le héros et son prix');
+  check((await page.game()).trying === 'anne' && (await page.text('#hero-desc')).startsWith('Anne'), 'le héros à acheter est montré dans l’aperçu, avec sa description');
+  check((await page.text('#btn-buy-hero')).includes('Anne') && !(await page.eval(`document.querySelector('#btn-buy-hero').disabled`)), 'le bouton « Acheter » propose le héros et son prix');
   await page.click('.char-card[data-id="ombre"]');
   check((await page.game()).selected === 'ombre' && (await page.game()).trying === null && !(await page.visible('#btn-buy-hero')), 'choisir un héros possédé annule l’aperçu du héros à acheter');
-  await page.click('.char-card[data-id="bolt"]');
+  await page.click('.char-card[data-id="anne"]');
   await page.click('#btn-buy-hero');
-  check((await page.game()).selected === 'bolt' && (await page.game()).trying === null, 'le bouton « Acheter » achète le héros et le sélectionne');
+  check((await page.game()).selected === 'anne' && (await page.game()).trying === null, 'le bouton « Acheter » achète le héros et le sélectionne');
   await shot('2b-collection-heros');
   const heroesHead = await page.eval(`(() => ['h2', '.tabs'].map((sel) => Math.round(document.querySelector('#overlay-collection ' + sel).getBoundingClientRect().top)).join(','))()`);
   for (const tab of ['styles', 'amulets', 'heroes']) {
@@ -418,7 +418,7 @@ async function scenario(page, url, viewport) {
   await page.send('Page.navigate', { url: `${url}?debug` });
   await page.waitFor('le rechargement', `!!window.__game && !document.querySelector('#btn-start').disabled`);
   const reloaded = await page.game();
-  check(reloaded.gold === quit.gold && reloaded.selected === 'bolt', 'la progression est conservée après rechargement');
+  check(reloaded.gold === quit.gold && reloaded.selected === 'anne', 'la progression est conservée après rechargement');
   check(reloaded.weapon === 'aura' && reloaded.difficulty === 'easy', 'l’arme et la difficulté sont conservées après rechargement');
 
   // --- Export puis import de la sauvegarde dans un navigateur "neuf" ---
@@ -453,7 +453,7 @@ async function scenario(page, url, viewport) {
   await shot('8-sauvegarde-import');
   await page.click('#btn-import');
   const imported = await page.game();
-  check(imported.gold === quit.gold && imported.selected === 'bolt', 'la confirmation restaure l’or et l’apparence');
+  check(imported.gold === quit.gold && imported.selected === 'anne', 'la confirmation restaure l’or et l’apparence');
   check(imported.weapon === 'aura' && imported.difficulty === 'easy', 'la confirmation restaure l’arme et la difficulté');
   await page.click('#btn-save-back');
   check(!(await page.visible('#overlay-save')), 'l’écran de sauvegarde se ferme');
@@ -465,7 +465,7 @@ async function scenario(page, url, viewport) {
   await page.send('Page.navigate', { url: `${url}?debug` });
   await page.waitFor('le rechargement', `!!window.__game && !document.querySelector('#btn-start').disabled`);
   const kept = await page.game();
-  check(kept.gold === quit.gold && kept.selected === 'bolt' && kept.weapon === 'aura', 'la sauvegarde importée est conservée après rechargement');
+  check(kept.gold === quit.gold && kept.selected === 'anne' && kept.weapon === 'aura', 'la sauvegarde importée est conservée après rechargement');
 
   // --- Chaque arme à l'écran : rendu sans erreur, arme visible, ennemis touchés ---
   await page.eval('window.__game.addGold(5000)');
@@ -666,6 +666,8 @@ async function orientationScenario(page, url, device) {
   await page.tapElement('#btn-chest-1');
   await page.waitFor('l’ouverture en plein écran', openWhole, 3000);
   check(await page.eval(`!!document.querySelector('#overlay-reveal .reveal-chest')`), 'le coffre apparaît en plein écran');
+  await page.waitFor('la musique des coffres', 'window.__game.state().audio.wanted === "chest"', 3000);
+  check(true, 'la musique des coffres remplace celle du menu pendant l’ouverture');
   await sleep(550);
   check(await page.eval(phase('tension')), 'le coffre tremble avant de s’ouvrir');
   await shot('2a1-coffre-tension');
@@ -690,6 +692,8 @@ async function orientationScenario(page, url, device) {
   check((await page.game()).cosmetics.projectile.includes('crimson'), 'une apparence est trouvée');
   await page.tapElement('#reveal-close');
   check(!(await page.eval(openWhole)), '« Terminer » referme le plein écran');
+  await page.waitFor('le retour à la musique du menu', 'window.__game.state().audio.wanted === "menu"', 3000);
+  check(true, 'la musique du menu revient à la fermeture des coffres');
   // Trois coffres d'amulettes pour 2500 pièces : trois cartes à passer au toucher, puis le récapitulatif.
   await page.eval('window.__game.chestRandom([0.2, 0])');
   await page.tapElement('#btn-chest-3');
@@ -720,9 +724,21 @@ async function orientationScenario(page, url, device) {
   const preview = await page.eval(`(() => {
     const b = window.__game.heroBox();
     const stage = document.querySelector('#hero-stage').getBoundingClientRect();
-    return { previewing: window.__game.state().previewing, top: b.top, bottom: b.bottom, x: b.x, stageTop: stage.top, stageBottom: stage.bottom, w: innerWidth, h: innerHeight };
+    return { previewing: window.__game.state().previewing, top: b.top, bottom: b.bottom, x: b.x, cameraY: b.cameraY, stageTop: stage.top, stageBottom: stage.bottom, w: innerWidth, h: innerHeight };
   })()`);
   check(preview.previewing, 'la collection montre l’aperçu du héros');
+  check(preview.cameraY >= 0.5 - 1e-6, `l’aperçu garde la caméra au-dessus du sol, qui reste visible (hauteur ${preview.cameraY.toFixed(2)})`);
+  // Un héros à acheter réduit la fenêtre d'aperçu (bouton « Acheter ») : la caméra ne doit pas passer sous le sol.
+  await page.tapElement('.char-card[data-id="pip"]');
+  await sleep(1300);
+  const locked = await page.eval(`(() => {
+    const b = window.__game.heroBox();
+    const stage = document.querySelector('#hero-stage').getBoundingClientRect();
+    return { trying: window.__game.state().trying, top: b.top, bottom: b.bottom, cameraY: b.cameraY, stageTop: stage.top, stageBottom: stage.bottom, w: innerWidth, h: innerHeight };
+  })()`);
+  check(locked.trying === 'pip' && locked.cameraY >= 0.5 - 1e-6, `aperçu d’un héros à acheter : la caméra reste au-dessus du sol (hauteur ${locked.cameraY.toFixed(2)})`);
+  if (locked.h > locked.w) check(locked.top >= locked.stageTop - 4 && locked.bottom <= locked.stageBottom + 4, `le héros à acheter se voit en entier dans la fenêtre d’aperçu (tête ${Math.round(locked.top)}, pieds ${Math.round(locked.bottom)}, fenêtre ${Math.round(locked.stageTop)}–${Math.round(locked.stageBottom)})`);
+  await page.tapElement('.char-card[data-id="ombre"]');
   if (preview.h > preview.w) {
     check(preview.top >= preview.stageTop - 4 && preview.bottom <= preview.stageBottom + 4, `le héros se voit en entier dans la fenêtre d’aperçu (tête ${Math.round(preview.top)}, pieds ${Math.round(preview.bottom)}, fenêtre ${Math.round(preview.stageTop)}–${Math.round(preview.stageBottom)})`);
     check(preview.stageBottom - preview.stageTop >= 150, 'la fenêtre d’aperçu est assez haute');
@@ -1100,6 +1116,28 @@ async function checkWeaponAlignment(page, label) {
   check(problems.length === 0, `${label} : icônes, noms et statuts des armes sont alignés${problems.length ? ' :\n    ' + problems.join('\n    ') : ''}`);
 }
 
+/** Les quatre difficultés ont la même mise en page : icône + nom sur une ligne, multiplicateur d'or sur la suivante. */
+async function checkDifficultyAlignment(page, label) {
+  const problems = await page.eval(`(() => {
+    const buttons = [...document.querySelectorAll('.diff-btn')];
+    const out = [];
+    for (const part of ['.diff-name', '.diff-gold']) {
+      const rects = buttons.map((b) => b.querySelector(part).getBoundingClientRect());
+      const tops = rects.map((r) => r.top);
+      if (Math.max(...tops) - Math.min(...tops) > 1) out.push(part + ' à des hauteurs différentes : ' + tops.map(Math.round).join(', '));
+      const heights = rects.map((r) => r.height);
+      if (Math.max(...heights) - Math.min(...heights) > 1) out.push(part + ' de hauteurs différentes : ' + heights.map(Math.round).join(', '));
+    }
+    // Une seule ligne de texte pour le nom : sa hauteur ne dépasse pas celle de l'icône (1,15 em) augmentée de l'interligne.
+    for (const b of buttons) {
+      const name = b.querySelector('.diff-name');
+      if (name.getBoundingClientRect().height > parseFloat(getComputedStyle(name).fontSize) * 1.9) out.push(b.dataset.id + ' : nom sur plusieurs lignes');
+    }
+    return out;
+  })()`);
+  check(problems.length === 0, `${label} : les difficultés sont alignées (nom sur une ligne, or sur l'autre)${problems.length ? ' :\n    ' + problems.join('\n    ') : ''}`);
+}
+
 async function checkTexts(page, label, pairs = []) {
   const overflow = await textOverflows(page);
   const overlaps = pairs.length ? await overlapsBetween(page, pairs) : [];
@@ -1132,10 +1170,12 @@ async function textScenario(page, url, size) {
   // --- Menu : cinq armes avec badges, difficultés, boutons ---
   await checkTexts(page, 'menu', BADGES);
   await checkWeaponAlignment(page, 'menu à cinq armes');
+  await checkDifficultyAlignment(page, 'menu');
   await shot('1-menu');
   for (const id of ['easy', 'normal', 'hard', 'extreme']) {
     await page.click(`.diff-btn[data-id="${id}"]`);
     await checkTexts(page, `menu en difficulté ${id}`);
+    await checkDifficultyAlignment(page, `menu en difficulté ${id}`);
   }
   await page.click('.diff-btn[data-id="normal"]');
 

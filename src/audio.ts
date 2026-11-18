@@ -16,6 +16,7 @@ export type SoundName =
   | 'special'
   | 'boss'
   | 'legend'
+  | 'mythic'
   | 'chest'
   | 'rumble'
   | 'boom'
@@ -224,6 +225,16 @@ export class Sfx {
         // Fanfare ascendante suivie de scintillements.
         [523, 659, 784, 1047, 1319, 1568, 2093].forEach((f, i) => this.tone('triangle', f, f, 0.22, 0.13, i * 0.09));
         [2093, 2637, 3136].forEach((f, i) => this.tone('sine', f, f * 1.02, 0.35, 0.06, 0.7 + i * 0.12));
+        break;
+      case 'mythic':
+        // Plus rare que « legend » : un grave qui gronde, une longue fanfare montante en deux couches, puis un accord brillant.
+        this.tone('sine', 140, 30, 0.7, 0.35);
+        [392, 523, 659, 784, 1047, 1319, 1568, 2093, 2637].forEach((f, i) => {
+          this.tone('triangle', f, f, 0.3, 0.12, 0.1 + i * 0.1);
+          this.tone('square', f / 2, f / 2, 0.22, 0.04, 0.1 + i * 0.1);
+        });
+        [1047, 1319, 1568, 2093].forEach((f) => this.tone('sine', f, f * 1.01, 1.1, 0.1, 1.15));
+        [3136, 3951, 4699].forEach((f, i) => this.tone('sine', f, f * 1.02, 0.4, 0.05, 1.3 + i * 0.12));
         break;
       case 'special':
         // Explosion : grave qui s'effondre + claquement aigu.

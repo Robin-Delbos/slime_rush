@@ -7,6 +7,7 @@ import {
   COIN_TIERS,
   applyReward,
   chestPrice,
+  missingChestCharacters,
   missingChestWeapons,
   missingCosmetics,
   openChests,
@@ -144,7 +145,8 @@ describe('Contenu des coffres', () => {
     expect(CHEST_BUNDLE).toEqual({ count: 3, price: 2500 });
     expect(CHEST_BUNDLE.price).toBeLessThan(CHEST_PRICE * CHEST_BUNDLE.count);
     expect(CHEST_ODDS.weapon).toBeCloseTo(0.01);
-    expect(CHEST_ODDS.weapon + CHEST_ODDS.amulet + CHEST_ODDS.cosmetic).toBeLessThan(1);
+    expect(CHEST_ODDS.character).toBeCloseTo(0.05);
+    expect(CHEST_ODDS.weapon + CHEST_ODDS.amulet + CHEST_ODDS.cosmetic + CHEST_ODDS.character).toBeLessThan(1);
     expect(chestPrice(1)).toBe(1000);
     expect(chestPrice(3)).toBe(2500);
     expect(chestPrice(2)).toBeNull();
@@ -169,6 +171,34 @@ describe('Contenu des coffres', () => {
     expect(rollChest(defaultSave(), dice(0.95, 0.3, 0.5)).type).toBe('coins');
   });
 
+  it('donne Pirate ou Lis avec 5 % de chances, jamais deux fois le même', () => {
+    expect(missingChestCharacters(defaultSave())).toEqual(['pirate', 'lis']);
+    // Juste après les apparences (0,71), 5 % de chances : le second dé choisit le héros.
+    expect(rollChest(defaultSave(), dice(0.72, 0))).toEqual({ type: 'character', id: 'pirate' });
+    expect(rollChest(defaultSave(), dice(0.72, 0.9))).toEqual({ type: 'character', id: 'lis' });
+    expect(rollChest(defaultSave(), dice(0.7, 0)).type).toBe('cosmetic');
+    expect(rollChest(defaultSave(), dice(0.77, 0.3, 0.5)).type).toBe('coins');
+
+    const save = defaultSave();
+    save.unlocked.push('pirate');
+    expect(missingChestCharacters(save)).toEqual(['lis']);
+    expect(rollChest(save, dice(0.72, 0))).toEqual({ type: 'character', id: 'lis' });
+    // Plus aucun héros de coffre à gagner : des pièces à la place.
+    save.unlocked.push('lis');
+    expect(missingChestCharacters(save)).toEqual([]);
+    expect(rollChest(save, dice(0.72, 0.2, 0.2)).type).toBe('coins');
+  });
+
+  it('range le héros trouvé dans la sauvegarde, sans doublon', () => {
+    const save = defaultSave();
+    applyReward(save, { type: 'character', id: 'lis' });
+    applyReward(save, { type: 'character', id: 'lis' });
+    expect(save.unlocked).toEqual(['ombre', 'lis']);
+    const storage = memoryStorage();
+    persistSave(storage, save);
+    expect(loadSave(storage).unlocked).toEqual(['ombre', 'lis']);
+  });
+
   it('donne des pièces quand toutes les apparences sont déjà possédées', () => {
     const save = defaultSave();
     for (const c of lootableCosmetics()) save.cosmetics[c.category].push(c.id);
@@ -178,7 +208,7 @@ describe('Contenu des coffres', () => {
 
   it('respecte les probabilités annoncées sur un grand nombre de coffres', () => {
     const n = 30000;
-    const counts: Record<string, number> = { weapon: 0, amulet: 0, cosmetic: 0, coins: 0 };
+    const counts: Record<string, number> = { weapon: 0, amulet: 0, cosmetic: 0, character: 0, coins: 0 };
     for (let i = 0; i < n; i++) counts[rollChest(defaultSave(), random).type]++;
     expect(counts.weapon / n).toBeGreaterThan(0.005);
     expect(counts.weapon / n).toBeLessThan(0.016);
@@ -186,8 +216,10 @@ describe('Contenu des coffres', () => {
     expect(counts.amulet / n).toBeLessThan(0.4);
     expect(counts.cosmetic / n).toBeGreaterThan(0.3);
     expect(counts.cosmetic / n).toBeLessThan(0.34);
-    expect(counts.coins / n).toBeGreaterThan(0.27);
-    expect(counts.coins / n).toBeLessThan(0.31);
+    expect(counts.character / n).toBeGreaterThan(0.04);
+    expect(counts.character / n).toBeLessThan(0.06);
+    expect(counts.coins / n).toBeGreaterThan(0.22);
+    expect(counts.coins / n).toBeLessThan(0.26);
   });
 
   it('tire des pièces entre 200 et 10 000, en multiples de 10, avec surtout de petits montants', () => {
@@ -316,6 +348,8 @@ describe('Affichage du contenu', () => {
   it('a un libellé, un titre et un sous-titre pour tout ce que les coffres peuvent donner', () => {
     const rewards = [
       { type: 'weapon', id: 'mines' },
+      { type: 'character', id: 'pirate' },
+      { type: 'character', id: 'lis' },
       ...AMULETS.map((a) => ({ type: 'amulet', id: a.id })),
       ...lootableCosmetics().map((c) => ({ type: 'cosmetic', category: c.category, id: c.id })),
       { type: 'coins', amount: 200 },
@@ -326,12 +360,43 @@ describe('Affichage du contenu', () => {
       expect(view.label.length, JSON.stringify(reward)).toBeGreaterThan(0);
       expect(view.title.length, JSON.stringify(reward)).toBeGreaterThan(0);
       expect(view.subtitle.length, JSON.stringify(reward)).toBeGreaterThan(0);
-      expect(['common', 'rare', 'legendary']).toContain(view.tier);
+      expect(['common', 'rare', 'legendary', 'mythic']).toContain(view.tier);
     }
   });
 
+  it('classe chaque contenu dans une rareté : l’arme est mythique, le héros légendaire, les pièces selon leur montant', () => {
+    const tier = (reward: Parameters<typeof rewardView>[0]) => rewardView(reward).tier;
+    expect(tier({ type: 'weapon', id: 'mines' })).toBe('mythic');
+    expect(tier({ type: 'character', id: 'pirate' })).toBe('legendary');
+    expect(tier({ type: 'character', id: 'lis' })).toBe('legendary');
+    expect(tier({ type: 'amulet', id: 'sage' })).toBe('rare');
+    expect(tier({ type: 'cosmetic', category: 'dust', id: 'ash' })).toBe('rare');
+    // Pièces : moins de 1 000 commun, de 1 000 à moins de 3 000 rare, 3 000 et plus légendaire.
+    expect(tier({ type: 'coins', amount: 200 })).toBe('common');
+    expect(tier({ type: 'coins', amount: 990 })).toBe('common');
+    expect(tier({ type: 'coins', amount: 1000 })).toBe('rare');
+    expect(tier({ type: 'coins', amount: 2990 })).toBe('rare');
+    expect(tier({ type: 'coins', amount: 3000 })).toBe('legendary');
+    expect(tier({ type: 'coins', amount: 10000 })).toBe('legendary');
+  });
+
+  it('donne la même rareté à tous les contenus d’un même type, donc le même son et le même visuel', () => {
+    const amulets = new Set(AMULETS.map((a) => rewardView({ type: 'amulet', id: a.id }).tier));
+    const cosmetics = new Set(lootableCosmetics().map((c) => rewardView({ type: 'cosmetic', category: c.category, id: c.id }).tier));
+    expect([...amulets, ...cosmetics]).toEqual(['rare', 'rare']);
+    // Seule l'arme est mythique.
+    const all = [
+      { type: 'weapon', id: 'mines' },
+      { type: 'character', id: 'lis' },
+      { type: 'amulet', id: 'sage' },
+      { type: 'coins', amount: 200 },
+    ] as Parameters<typeof rewardView>[0][];
+    expect(all.filter((r) => rewardView(r).tier === 'mythic').map((r) => r.type)).toEqual(['weapon']);
+  });
+
   it('décrit chaque type de contenu', () => {
-    expect(rewardView({ type: 'weapon', id: 'mines' })).toMatchObject({ title: 'Mines', tier: 'legendary' });
+    expect(rewardView({ type: 'weapon', id: 'mines' })).toMatchObject({ title: 'Mines', tier: 'mythic' });
+    expect(rewardView({ type: 'character', id: 'lis' })).toMatchObject({ title: 'Lis', label: 'Nouveau héros !', tier: 'legendary' });
     expect(rewardView({ type: 'amulet', id: 'sage' })).toMatchObject({ title: 'Œil de sage', tier: 'rare' });
     expect(rewardView({ type: 'cosmetic', category: 'trail', id: 'flame' })).toMatchObject({ title: 'Flammes', tier: 'rare' });
     expect(rewardView({ type: 'cosmetic', category: 'trail', id: 'flame' }).subtitle).toContain('Traînées');
