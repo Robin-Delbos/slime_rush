@@ -4,6 +4,18 @@ Jeu de survie (survivor-like) 3D cartoon : Three.js 0.187, TypeScript, Vite, Vit
 Dépôt public : https://github.com/Robin-Delbos/slime_rush (branche `main`), site : https://robin-delbos.github.io/slime_rush/
 Le détail du jeu, des tests et de l'architecture est dans `README.md` : le lire avant de toucher au code.
 
+## Tenir ce fichier à jour
+
+Ce fichier est lu au début de chaque session : il doit rester **court, exact et utile**. Le mettre à jour **de ma propre initiative**, sans attendre qu'on me le demande, quand je le juge nécessaire :
+
+- une règle de travail ou une préférence nouvelle de l'utilisateur, surtout une correction qu'il a dû répéter ;
+- un piège qui m'a fait perdre du temps (pour ne pas le refaire) ;
+- une commande, une convention ou une structure du projet qui change (nouvel écran, nouveau test, nouveau script dans `tools/`...) ;
+- une information devenue fausse ou obsolète : la corriger ou la retirer tout de suite, un conseil périmé est pire que pas de conseil.
+
+À ne pas y mettre : ce que le code, le README ou l'historique git disent déjà, l'état d'une tâche en cours, des détails valables une seule fois. Une procédure longue et réutilisable devient plutôt un skill (voir `creer-skill`), et ce fichier y renvoie.
+La modification de ce fichier se commite comme `docs` (sans changer la version), de préférence avec le travail qui l'a motivée, et je le signale à l'utilisateur dans mon compte rendu.
+
 ## Façon de travailler
 
 - **Toujours répondre en français**, y compris les messages de commit.
