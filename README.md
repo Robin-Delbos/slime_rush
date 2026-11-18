@@ -214,7 +214,7 @@ Réglage à faire une seule fois sur GitHub : *Settings → Pages → Source : G
 - **Amulette** : une entrée dans `AMULETS` (`src/amulets.ts`) ; **apparence** : une entrée dans `COSMETICS` (`src/cosmetics.ts`) ; **arme de coffre** : une arme avec `chest: true` dans `WEAPONS`.
 - **Boss** : un type avec `boss: true` dans `DEFS` (`src/enemies.ts`) ; la cadence et le plafond sont dans `src/run.ts` (`BOSS_INTERVAL`, `MAX_BOSSES`).
 - **Amélioration permanente** : une entrée dans `SHOP_ITEMS` (`src/meta.ts`).
-- **Héros** : une entrée dans `CHARACTERS` (`src/meta.ts`) et son modèle dans `public/models/`. Le modèle doit contenir des animations nommées `Idle`, `Run` (ou `Running`) et `Death`. Les modèles doivent avoir le même style que les autres (personnages cartoon, grosse tête). Pour alléger un modèle (animations et UV inutiles), on ne garde que ces trois animations.
+- **Héros** : une entrée dans `CHARACTERS` (`src/meta.ts`) et son modèle dans `public/models/`. Le modèle doit contenir des animations nommées `Idle`, `Run` (ou `Running`) et `Death`. Les modèles doivent avoir le même style que les autres (personnages cartoon, grosse tête). Pour l'alléger et retirer l'arme tenue en main, utiliser `tools/slim-glb.cjs` (usage en tête du fichier). Chaque nouveau héros coûte un peu plus cher que le précédent.
 - **Ennemi** : une entrée dans `DEFS` (`src/enemies.ts`), et son modèle dans `ENEMY_MODELS` (`src/assets.ts`).
 
 ### Comment des centaines d'ennemis animés restent fluides
