@@ -371,17 +371,33 @@ describe('Amulettes et apparences dans la sauvegarde', () => {
     expect(save.amuletLevel).toBe(AMULET_MAX_LEVEL);
   });
 
-  it('consomme autant d’exemplaires que le niveau, puis se déséquipe quand le stock est vide', () => {
+  it('consomme autant d’exemplaires que le niveau et se déséquipe, même s’il en reste', () => {
     const save = withStock('stone', 5);
     equipAmulet(save, 'stone', 3);
     expect(consumeAmulet(save)).toEqual({ id: 'stone', level: 3 });
     expect(save.amulets.stone).toBe(2);
-    expect(save.amulet).toBe('stone');
-    // Il n'en reste que 2 : le niveau voulu (3) est ramené au stock.
+    // Il en reste, mais elle n'est plus équipée : pour la partie suivante, il faut la rééquiper.
+    expect(save.amulet).toBe('');
+    expect(save.amuletLevel).toBe(1);
+    expect(consumeAmulet(save)).toBeNull();
+    expect(save.amulets.stone).toBe(2);
+    // Rééquipée avec un niveau trop haut : il est ramené au stock, qui se vide.
+    equipAmulet(save, 'stone', 3);
     expect(consumeAmulet(save)).toEqual({ id: 'stone', level: 2 });
     expect(save.amulets.stone).toBeUndefined();
     expect(save.amulet).toBe('');
     expect(consumeAmulet(save)).toBeNull();
+  });
+
+  it('garde l’amulette déséquipée après rechargement de la sauvegarde', () => {
+    const storage = { data: {} as Record<string, string>, getItem(k: string) { return this.data[k] ?? null; }, setItem(k: string, v: string) { this.data[k] = v; } };
+    const save = withStock('stone', 4);
+    equipAmulet(save, 'stone', 1);
+    consumeAmulet(save);
+    persistSave(storage, save);
+    const loaded = loadSave(storage);
+    expect(loaded.amulets.stone).toBe(3);
+    expect(loaded.amulet).toBe('');
   });
 
   it('ne consomme rien quand aucune amulette n’est équipée, ou quand l’équipée n’existe plus', () => {

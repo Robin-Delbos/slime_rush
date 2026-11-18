@@ -56,6 +56,7 @@ describe('Sauvegarde', () => {
     save.weapon = 'aura';
     save.difficulty = 'hard';
     save.muted = true;
+    save.music = false;
     persistSave(storage, save);
     expect(loadSave(storage)).toEqual(save);
   });
@@ -70,7 +71,7 @@ describe('Sauvegarde', () => {
       gold: -50,
       bestTime: 'abc',
       shop: { vitality: 999, inconnu: 4, power: -2 },
-      unlocked: ['bolt', 'pirate'],
+      unlocked: ['bolt', 'astronaute'],
       selected: 'pip',
     });
     const save = loadSave(memoryStorage({ [SAVE_KEY]: raw }));
@@ -150,7 +151,7 @@ describe('Export et import de la sauvegarde', () => {
   });
 
   it('nettoie un code modifié à la main', () => {
-    const forged = `SLIMERUSH1:${btoa(JSON.stringify({ gold: -5, shop: { vitality: 999 }, unlocked: ['pirate'], selected: 'pip' }))}`;
+    const forged = `SLIMERUSH1:${btoa(JSON.stringify({ gold: -5, shop: { vitality: 999 }, unlocked: ['astronaute'], selected: 'pip' }))}`;
     const save = importSave(forged)!;
     expect(save.gold).toBe(0);
     expect(save.shop.vitality).toBe(SHOP_ITEMS.find((i) => i.id === 'vitality')!.max);
@@ -340,6 +341,11 @@ describe('Équilibre des prix', () => {
       ['ombre', 0],
       ['bolt', 1000],
       ['pip', 2500],
+      ['anne', 3000],
+      ['sam', 3500],
+      ['pirate', 4000],
+      ['lis', 4500],
+      ['matt', 5000],
     ]);
   });
 
@@ -457,5 +463,83 @@ describe('Récompense de fin de partie', () => {
     expect(runReward(10, 60, 0.6)).toBe(9);
     expect(runReward(0, 5, 2.2)).toBe(0);
     expect(runReward(10, 60)).toBe(runReward(10, 60, 1));
+  });
+});
+
+describe('Personnages', () => {
+  it('propose huit héros, tous avec leur modèle 3D distinct', () => {
+    expect(CHARACTERS.map((c) => c.id)).toEqual(['ombre', 'bolt', 'pip', 'anne', 'sam', 'pirate', 'lis', 'matt']);
+    const models = CHARACTERS.map((c) => c.model);
+    expect(new Set(models).size).toBe(models.length);
+    for (const model of models) expect(model).toMatch(/^hero-[a-z]+\.glb$/);
+  });
+
+  it('fait payer chaque héros ajouté un peu plus cher que le précédent', () => {
+    const added = ['pip', 'anne', 'sam', 'pirate', 'lis', 'matt'].map((id) => CHARACTERS.find((c) => c.id === id)!.cost);
+    for (let i = 1; i < added.length; i++) expect(added[i], `prix du héros n°${i + 1}`).toBeGreaterThan(added[i - 1]);
+    // Et toute la liste monte avec les prix : le plus cher est le dernier.
+    const costs = CHARACTERS.map((c) => c.cost);
+    expect([...costs].sort((a, b) => a - b)).toEqual(costs);
+  });
+
+  it('ne donne que le premier héros au départ, les autres s’achètent', () => {
+    const save = defaultSave();
+    expect(save.unlocked).toEqual(['ombre']);
+    save.gold = 2999;
+    expect(chooseCharacter(save, 'anne')).toBe('denied');
+    save.gold = 3000;
+    expect(chooseCharacter(save, 'anne')).toBe('bought');
+    expect(save.gold).toBe(0);
+    expect(save.selected).toBe('anne');
+    save.gold = 3500;
+    expect(chooseCharacter(save, 'sam')).toBe('bought');
+    expect(save.selected).toBe('sam');
+    // Une fois achetés, on peut revenir à un héros sans repayer.
+    expect(chooseCharacter(save, 'anne')).toBe('selected');
+    expect(save.gold).toBe(0);
+  });
+
+  it('met à jour une ancienne sauvegarde qui contient le héros renommé (capuche devient sam)', () => {
+    const old = JSON.stringify({ gold: 10, unlocked: ['ombre', 'capuche', 'aventuriere'], selected: 'capuche' });
+    const loaded = loadSave(memoryStorage({ [SAVE_KEY]: old }));
+    expect(loaded.unlocked).toEqual(['ombre', 'anne', 'sam']);
+    expect(loaded.selected).toBe('sam');
+    expect(loadSave(memoryStorage({ [SAVE_KEY]: JSON.stringify({ unlocked: ['aventuriere'], selected: 'aventuriere' }) })).selected).toBe('anne');
+  });
+
+  it('garde un nouveau héros acheté après rechargement de la sauvegarde', () => {
+    const storage = memoryStorage();
+    const save = defaultSave();
+    save.gold = 5000;
+    chooseCharacter(save, 'sam');
+    persistSave(storage, save);
+    const loaded = loadSave(storage);
+    expect(loaded.unlocked).toContain('sam');
+    expect(loaded.selected).toBe('sam');
+  });
+});
+
+describe('Réglage de la musique', () => {
+  it('est activée par défaut, séparément du son général', () => {
+    const save = defaultSave();
+    expect(save.music).toBe(true);
+    expect(save.muted).toBe(false);
+  });
+
+  it('est conservée dans la sauvegarde et réparée si elle est invalide', () => {
+    const storage = memoryStorage();
+    const save = defaultSave();
+    save.music = false;
+    persistSave(storage, save);
+    expect(loadSave(storage).music).toBe(false);
+    // Une ancienne sauvegarde, sans ce réglage, garde la musique allumée.
+    expect(loadSave(memoryStorage({ [SAVE_KEY]: JSON.stringify({ gold: 5 }) })).music).toBe(true);
+    expect(loadSave(memoryStorage({ [SAVE_KEY]: JSON.stringify({ music: 'non' }) })).music).toBe(true);
+  });
+
+  it('passe par l’export et l’import de sauvegarde', () => {
+    const save = defaultSave();
+    save.music = false;
+    expect(importSave(exportSave(save))?.music).toBe(false);
   });
 });

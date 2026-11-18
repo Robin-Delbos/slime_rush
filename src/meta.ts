@@ -30,7 +30,10 @@ export interface SaveData {
   /** Apparences possédées et apparences choisies, par catégorie. */
   cosmetics: CosmeticOwned;
   style: CosmeticStyle;
+  /** Tout le son coupé (bouton du menu). */
   muted: boolean;
+  /** Musique de fond active (réglable depuis le menu pause, indépendamment des bruitages). */
+  music: boolean;
 }
 
 export interface StorageLike {
@@ -83,7 +86,16 @@ export const CHARACTERS: Character[] = [
   { id: 'ombre', name: 'Ombre', desc: 'Le héros d’origine', model: 'hero-ombre.glb', cost: 0 },
   { id: 'bolt', name: 'Bolt', desc: 'Robot bricoleur', model: 'hero-bolt.glb', cost: 1000 },
   { id: 'pip', name: 'Pip', desc: 'Mascotte bondissante', model: 'hero-pip.glb', cost: 2500 },
+  // Chaque nouveau héros coûte 500 pièces de plus que le précédent.
+  { id: 'anne', name: 'Anne', desc: 'Exploratrice aux longues tresses', model: 'hero-anne.glb', cost: 3000 },
+  { id: 'sam', name: 'Sam', desc: 'Bonnet, veste à capuche et baskets', model: 'hero-sam.glb', cost: 3500 },
+  { id: 'pirate', name: 'Pirate', desc: 'Capitaine à la barbe rousse et son perroquet', model: 'hero-pirate.glb', cost: 4000 },
+  { id: 'lis', name: 'Lis', desc: 'Punk à la crête bleue', model: 'hero-lis.glb', cost: 4500 },
+  { id: 'matt', name: 'Matt', desc: 'Baroudeur à la veste orange', model: 'hero-matt.glb', cost: 5000 },
 ];
+
+/** Anciens identifiants de héros (renommés) : une sauvegarde qui les contient est mise à jour. */
+const RENAMED_CHARACTERS: Record<string, string> = { capuche: 'sam', aventuriere: 'anne' };
 
 export interface Difficulty {
   id: string;
@@ -123,6 +135,7 @@ export function defaultSave(): SaveData {
     cosmetics: defaultOwned(),
     style: defaultStyle(),
     muted: false,
+    music: true,
   };
 }
 
@@ -160,6 +173,7 @@ function sanitizeSave(raw: unknown): SaveData {
   if (Number.isFinite(data.gold)) save.gold = Math.max(0, Math.floor(data.gold!));
   if (Number.isFinite(data.bestTime)) save.bestTime = Math.max(0, data.bestTime!);
   if (typeof data.muted === 'boolean') save.muted = data.muted;
+  if (typeof data.music === 'boolean') save.music = data.music;
   if (data.shop && typeof data.shop === 'object') {
     for (const item of SHOP_ITEMS) {
       const level = Number(data.shop[item.id]);
@@ -167,11 +181,13 @@ function sanitizeSave(raw: unknown): SaveData {
     }
   }
   if (Array.isArray(data.unlocked)) {
+    const unlocked = data.unlocked.map((id) => RENAMED_CHARACTERS[id] ?? id);
     for (const c of CHARACTERS) {
-      if (data.unlocked.includes(c.id) && !save.unlocked.includes(c.id)) save.unlocked.push(c.id);
+      if (unlocked.includes(c.id) && !save.unlocked.includes(c.id)) save.unlocked.push(c.id);
     }
   }
-  if (typeof data.selected === 'string' && save.unlocked.includes(data.selected)) save.selected = data.selected;
+  const selected = typeof data.selected === 'string' ? (RENAMED_CHARACTERS[data.selected] ?? data.selected) : '';
+  if (save.unlocked.includes(selected)) save.selected = selected;
   if (Array.isArray(data.weapons)) {
     for (const w of WEAPONS) {
       if (data.weapons.includes(w.id) && !save.weapons.includes(w.id)) save.weapons.push(w.id);
@@ -288,6 +304,7 @@ export function equipAmulet(save: SaveData, id: string, level = 1): boolean {
 /**
  * Consomme l'amulette équipée au lancement d'une partie (autant d'exemplaires que son niveau).
  * Renvoie ce qu'il faut appliquer à la partie, ou null s'il n'y en a pas.
+ * Elle est toujours déséquipée ensuite, même s'il en reste : pour la partie suivante, il faut la rééquiper.
  */
 export function consumeAmulet(save: SaveData): { id: string; level: number } | null {
   const id = save.amulet;
@@ -299,10 +316,9 @@ export function consumeAmulet(save: SaveData): { id: string; level: number } | n
   }
   const level = Math.min(save.amuletLevel, count, AMULET_MAX_LEVEL);
   save.amulets[id] = count - level;
-  if (save.amulets[id] <= 0) {
-    delete save.amulets[id];
-    save.amulet = '';
-  }
+  if (save.amulets[id] <= 0) delete save.amulets[id];
+  save.amulet = '';
+  save.amuletLevel = 1;
   return { id, level };
 }
 

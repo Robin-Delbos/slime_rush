@@ -98,33 +98,50 @@
           <div class="menu-info">
             <span id="menu-gold" class="pill">🪙 0</span>
             <span id="best-start" class="pill">🏆 --:--</span>
+            <button id="btn-music-menu" class="pill pill-btn" aria-label="Activer ou couper la musique" aria-pressed="true">🎵</button>
             <button id="btn-sound" class="pill pill-btn" aria-label="Activer ou couper le son">🔊</button>
             <button id="btn-save" class="pill pill-btn" aria-label="Exporter ou importer la sauvegarde">💾</button>
-          </div>
-          <div class="menu-info">
-            <button id="btn-chests" class="pill pill-btn chest-cta">🎁 Coffres</button>
-            <button id="btn-collection" class="pill pill-btn">🎒 Collection</button>
           </div>
         </div>
         <div class="menu-bottom">
           <div id="weapons" aria-label="Arme de départ"></div>
+          <p id="weapon-desc" class="loadout-desc"></p>
           <div id="difficulty" aria-label="Difficulté"></div>
-          <div class="menu-actions">
-            <button id="btn-shop" class="btn btn-alt">Boutique</button>
+          <div class="main-actions">
+            <button id="btn-shop" class="side-btn">
+              <span class="side-icon">🎁</span>
+              <span class="side-label">Boutique</span>
+            </button>
             <button id="btn-start" class="btn" disabled>Chargement…</button>
+            <button id="btn-collection" class="side-btn">
+              <span class="side-icon">🎒</span>
+              <span class="side-label">Collection</span>
+            </button>
           </div>
           <span id="version" class="version"></span>
         </div>
       </div>
 
-      <div id="overlay-shop" class="overlay hidden">
+      <div id="overlay-shop" class="overlay hidden" data-tab="upgrades">
         <h2>Boutique</h2>
-        <p class="hint">Améliorations permanentes, conservées d'une partie à l'autre</p>
         <span id="shop-gold" class="pill">🪙 0</span>
-        <div id="shop-items"></div>
-        <h3 class="section-title">Apparences</h3>
-        <p class="hint">Change l’aspect du héros, sans effet sur le jeu</p>
-        <div id="characters"></div>
+        <div class="tabs" role="tablist" aria-label="Rayons de la boutique">
+          <button id="tab-upgrades" class="tab selected" role="tab" data-tab="upgrades" aria-selected="true">Améliorations</button>
+          <button id="tab-chests" class="tab" role="tab" data-tab="chests" aria-selected="false">Coffres</button>
+        </div>
+        <section id="panel-upgrades" class="tab-panel" role="tabpanel">
+          <p class="hint">Améliorations permanentes, conservées d'une partie à l'autre</p>
+          <div id="shop-items"></div>
+        </section>
+        <section id="panel-chests" class="tab-panel hidden" role="tabpanel">
+          <div id="chest-preview" class="chest-preview" aria-hidden="true"></div>
+          <p class="hint">Amulettes, apparences, pièces… et peut-être une arme secrète</p>
+          <div class="menu-actions">
+            <button id="btn-chest-1" class="btn btn-small">🎁 Un coffre · 1000 🪙</button>
+            <button id="btn-chest-3" class="btn btn-small btn-alt">🎁 3 coffres · 2500 🪙</button>
+          </div>
+          <p id="chest-status" class="best" role="status"></p>
+        </section>
         <button id="btn-shop-back" class="btn btn-alt">Retour</button>
       </div>
 
@@ -161,25 +178,28 @@
         <button id="btn-save-back" class="btn btn-alt">Retour</button>
       </div>
 
-      <div id="overlay-chests" class="overlay hidden">
-        <h2>Coffres</h2>
-        <p class="hint">Amulettes, apparences, pièces… et peut-être une arme secrète</p>
-        <span id="chest-gold" class="pill">🪙 0</span>
-        <div class="menu-actions">
-          <button id="btn-chest-1" class="btn btn-small">🎁 Un coffre · 1000 🪙</button>
-          <button id="btn-chest-3" class="btn btn-small btn-alt">🎁 3 coffres · 2500 🪙</button>
-        </div>
-        <p id="chest-status" class="best" role="status"></p>
-        <div class="menu-actions">
-          <button id="btn-open-collection" class="btn btn-small btn-alt">Ma collection</button>
-          <button id="btn-chests-back" class="btn btn-small">Retour</button>
-        </div>
-      </div>
-
-      <div id="overlay-collection" class="overlay hidden">
+      <div id="overlay-collection" class="overlay hidden" data-tab="heroes">
         <h2>Collection</h2>
-        <p class="hint">Choisissez l'amulette de la prochaine partie et vos apparences</p>
-        <div id="collection-body"></div>
+        <div class="tabs" role="tablist" aria-label="Contenu de la collection">
+          <button id="tab-heroes" class="tab selected" role="tab" data-tab="heroes" aria-selected="true">Héros</button>
+          <button id="tab-styles" class="tab" role="tab" data-tab="styles" aria-selected="false">Apparences</button>
+          <button id="tab-amulets" class="tab" role="tab" data-tab="amulets" aria-selected="false">Amulettes</button>
+        </div>
+        <section id="panel-heroes" class="tab-panel" role="tabpanel">
+          <!-- Fenêtre transparente : le héros en 3D se voit en entier à travers elle. -->
+          <div id="hero-stage" aria-hidden="true"></div>
+          <p id="hero-desc" class="loadout-desc"></p>
+          <button id="btn-buy-hero" class="btn btn-small hidden">Acheter</button>
+          <div id="characters"></div>
+        </section>
+        <section id="panel-styles" class="tab-panel hidden" role="tabpanel">
+          <p class="hint">À trouver dans les coffres. Purement décoratives : elles ne changent pas la puissance du héros.</p>
+          <div id="styles-body"></div>
+        </section>
+        <section id="panel-amulets" class="tab-panel hidden" role="tabpanel">
+          <p class="hint">Consommée au lancement : son effet ne dure que pour une partie. Plusieurs exemplaires la renforcent.</p>
+          <div id="amulets-body"></div>
+        </section>
         <button id="btn-collection-back" class="btn btn-alt">Retour</button>
       </div>
 
@@ -205,6 +225,10 @@
       <div id="overlay-pause" class="overlay hidden">
         <h2>Pause</h2>
         <button id="btn-resume" class="btn">Reprendre</button>
+        <div class="menu-actions">
+          <button id="btn-sound-pause" class="btn btn-small btn-toggle" aria-pressed="true">🔊 Son : oui</button>
+          <button id="btn-music" class="btn btn-small btn-toggle" aria-pressed="true">🎵 Musique : oui</button>
+        </div>
         <button id="btn-quit" class="btn btn-alt">Quitter la partie</button>
         <p class="hint">En quittant, vous conservez l'or gagné pendant cette partie.</p>
       </div>

@@ -3,7 +3,7 @@ import { AMULETS, AMULET_MAX_LEVEL, amuletOf } from './amulets';
 import { countUp } from './anim';
 import { CHEST_BUNDLE, rewardView, type ChestPrices, type ChestReward } from './chests';
 import { REVEAL_TIMING, RevealFlow } from './reveal';
-import { CATEGORIES, CATEGORY_LABELS, COSMETICS, type CosmeticCategory } from './cosmetics';
+import { CATEGORIES, CATEGORY_HELP, CATEGORY_LABELS, CATEGORY_WEAPONS, COSMETICS, type CosmeticCategory } from './cosmetics';
 import { WEAPON_PREFIX } from './upgrades';
 import { VERSION_LABEL } from './version';
 import { WEAPONS } from './weaponData';
@@ -59,7 +59,10 @@ export interface UiHandlers {
   onMenu(): void;
   /** Ouverture / fermeture d'un écran (pour le son de clic). */
   onNavigate(): void;
+  /** Choisit un héros possédé, ou achète un héros (appelé seulement par le bouton « Acheter »). */
   onSelectCharacter(id: string): void;
+  /** Montre un héros à acheter dans l'aperçu, sans l'acheter (null : retour au héros choisi). */
+  onTryHero(id: string | null): void;
   onSelectWeapon(id: string): void;
   onSelectDifficulty(id: string): void;
   /** Ouvre `count` coffres. Renvoie leur contenu, ou null s'il manque des pièces. */
@@ -73,6 +76,10 @@ export interface UiHandlers {
   onChestSound(sound: 'rumble' | 'thud' | 'boom' | 'common' | 'rare' | 'legendary' | 'next' | 'recap'): void;
   onBuy(id: string): void;
   onToggleSound(): void;
+  /** Cadre le héros en entier dans cette zone de l'écran (null : fin de l'aperçu). */
+  onPreview(view: { top: number; bottom: number; centerX: number } | null): void;
+  /** Coupe ou remet la musique seule (les bruitages restent). */
+  onToggleMusic(): void;
   /** Remplacement de la progression par une sauvegarde importée, déjà validée. */
   onImportSave(data: SaveData): void;
   onPause(): void;
@@ -120,7 +127,6 @@ export class Ui {
   private gameOver = el('overlay-gameover');
   private playButton = el<HTMLButtonElement>('btn-start');
   private saveScreen = el('overlay-save');
-  private chestScreen = el('overlay-chests');
   private collection = el('overlay-collection');
   private reveal = el('overlay-reveal');
   private revealStage = el('reveal-stage');
@@ -137,6 +143,8 @@ export class Ui {
   private rewardFrame = 0;
   /** Dernier texte écrit dans chaque élément du HUD (voir setText). */
   private shownText = new Map<HTMLElement, string>();
+  /** Héros à acheter que l'on regarde dans l'aperçu (pas encore acheté), ou null. */
+  private tryHero: string | null = null;
 
   constructor(
     private save: SaveData,
@@ -146,20 +154,25 @@ export class Ui {
     el('btn-restart').addEventListener('click', () => handlers.onPlay());
     el('btn-menu').addEventListener('click', () => handlers.onMenu());
     el('btn-sound').addEventListener('click', () => handlers.onToggleSound());
+    el('btn-music').addEventListener('click', () => handlers.onToggleMusic());
+    el('btn-sound-pause').addEventListener('click', () => handlers.onToggleSound());
+    el('btn-music-menu').addEventListener('click', () => handlers.onToggleMusic());
+    el('chest-preview').innerHTML = CHEST_ART;
     el('btn-pause').addEventListener('click', () => handlers.onPause());
     el('btn-resume').addEventListener('click', () => handlers.onResume());
     el('btn-quit').addEventListener('click', () => handlers.onQuit());
-    el('btn-shop').addEventListener('click', () => {
-      handlers.onNavigate();
-      this.shop.classList.remove('hidden');
-    });
     el('btn-shop-back').addEventListener('click', () => {
       handlers.onNavigate();
       this.shop.classList.add('hidden');
+      this.updateCover();
     });
     this.bindSaveScreen();
     this.bindChestScreens();
     el('version').textContent = VERSION_LABEL;
+    // La zone d'aperçu change avec la taille de l'écran (rotation du téléphone) : on recadre le héros.
+    window.addEventListener('resize', () => requestAnimationFrame(() => this.syncPreview()));
+    // Si l'écran des héros défile (écran très court), la fenêtre d'aperçu bouge : le héros la suit.
+    this.collection.addEventListener('scroll', () => this.syncPreview());
     this.refresh();
   }
 
@@ -174,10 +187,12 @@ export class Ui {
       this.resetImport();
       this.setSaveStatus('');
       this.saveScreen.classList.remove('hidden');
+      this.updateCover();
     });
     el('btn-save-back').addEventListener('click', () => {
       handlers.onNavigate();
       this.saveScreen.classList.add('hidden');
+      this.updateCover();
     });
 
     el('btn-export-copy').addEventListener('click', async () => {
@@ -281,19 +296,56 @@ export class Ui {
     el('shop-gold').textContent = `🪙 ${save.gold}`;
     el('best-start').textContent = save.bestTime > 0 ? `🏆 ${formatTime(save.bestTime)}` : '🏆 --:--';
     el('btn-sound').textContent = save.muted ? '🔇' : '🔊';
+    // Tout le son coupé : la musique l'est aussi, et son bouton est grisé (on ne peut la remettre qu'avec le son).
+    const musicOn = save.music && !save.muted;
+    el('btn-music-menu').classList.toggle('off', !musicOn);
+    el<HTMLButtonElement>('btn-music-menu').disabled = save.muted;
+    el('btn-music-menu').setAttribute('aria-pressed', String(musicOn));
+    el('btn-music').textContent = `🎵 Musique : ${musicOn ? 'oui' : 'non'}`;
+    el<HTMLButtonElement>('btn-music').disabled = save.muted;
+    el('btn-music').setAttribute('aria-pressed', String(musicOn));
+    el('btn-sound-pause').textContent = `${save.muted ? '🔇' : '🔊'} Son : ${save.muted ? 'non' : 'oui'}`;
+    el('btn-sound-pause').setAttribute('aria-pressed', String(!save.muted));
 
     const characters = el('characters');
     characters.replaceChildren();
+    // Un héros acheté entre-temps n'est plus « à essayer ».
+    if (this.tryHero && save.unlocked.includes(this.tryHero)) this.tryHero = null;
     for (const c of CHARACTERS) {
       const unlocked = save.unlocked.includes(c.id);
       const selected = save.selected === c.id;
-      const card = make('button', `char-card${selected ? ' selected' : ''}${unlocked ? '' : ' locked'}`);
+      const trying = this.tryHero === c.id;
+      const card = make('button', `char-card${selected ? ' selected' : ''}${unlocked ? '' : ' locked'}${trying ? ' trying' : ''}`);
       card.dataset.id = c.id;
-      const status = selected ? '✔ Choisie' : unlocked ? 'Choisir' : `🪙 ${c.cost}`;
+      const status = selected ? 'Choisie' : unlocked ? 'Choisir' : trying ? 'Aperçu' : `🪙 ${c.cost}`;
       card.append(make('span', 'char-name', c.name), make('span', 'char-desc', c.desc), make('span', 'char-status', status));
-      card.addEventListener('click', () => this.handlers.onSelectCharacter(c.id));
+      card.addEventListener('click', () => {
+        if (unlocked) {
+          // Un héros possédé se choisit tout de suite.
+          this.setTryHero(null);
+          this.handlers.onSelectCharacter(c.id);
+        } else {
+          // Un héros à acheter s'affiche seulement : l'achat se fait avec le bouton « Acheter ».
+          this.handlers.onNavigate();
+          this.setTryHero(c.id);
+        }
+      });
       characters.append(card);
     }
+    const tried = CHARACTERS.find((c) => c.id === this.tryHero);
+    const buy = el<HTMLButtonElement>('btn-buy-hero');
+    buy.classList.toggle('hidden', !tried);
+    if (tried) {
+      buy.textContent = `Acheter ${tried.name} · ${tried.cost} 🪙`;
+      buy.disabled = save.gold < tried.cost;
+      buy.onclick = () => {
+        this.setTryHero(null);
+        this.handlers.onSelectCharacter(tried.id);
+      };
+    }
+
+    const shownHero = CHARACTERS.find((c) => c.id === (this.tryHero ?? save.selected)) ?? CHARACTERS[0];
+    el('hero-desc').textContent = `${shownHero.name} : ${shownHero.desc}`;
 
     const weapons = el('weapons');
     weapons.replaceChildren();
@@ -304,8 +356,8 @@ export class Ui {
       const selected = save.weapon === w.id;
       const card = make('button', `weapon-card${selected ? ' selected' : ''}${unlocked ? '' : ' locked'}`);
       card.dataset.id = w.id;
-      const status = selected ? '✔ Choisie' : unlocked ? 'Choisir' : `🪙 ${w.cost}`;
-      card.append(iconElement('weapon-icon', w.icon), make('span', 'char-name', w.name), make('span', 'char-desc', w.desc), make('span', 'char-status', status));
+      const status = selected ? 'Choisie' : unlocked ? 'Choisir' : `🪙 ${w.cost}`;
+      card.append(iconElement('weapon-icon', w.icon), make('span', 'char-name', w.name), make('span', 'char-status', status));
       // Le badge n'apparaît que pour la difficulté avec laquelle le niveau 100 a été atteint.
       if (hasLegend(save, w.id)) {
         const badge = make('span', 'legend-badge', '🏆');
@@ -316,6 +368,9 @@ export class Ui {
       card.addEventListener('click', () => this.handlers.onSelectWeapon(w.id));
       weapons.append(card);
     }
+
+    const chosen = WEAPONS.find((w) => w.id === save.weapon) ?? WEAPONS[0];
+    el('weapon-desc').textContent = `${chosen.name} : ${chosen.desc}`;
 
     const difficulty = el('difficulty');
     difficulty.replaceChildren();
@@ -356,26 +411,27 @@ export class Ui {
 private refreshChests(): void {
     const gold = this.save.gold;
     const prices = this.handlers.chestPrices();
-    el('chest-gold').textContent = `🪙 ${gold}`;
     el<HTMLButtonElement>('btn-chest-1').disabled = gold < prices.single;
     el<HTMLButtonElement>('btn-chest-3').disabled = gold < prices.bundle;
     el('btn-chest-1').textContent = `🎁 Un coffre · ${prices.single} 🪙`;
     el('btn-chest-3').textContent = `🎁 ${CHEST_BUNDLE.count} coffres · ${prices.bundle} 🪙`;
-    // Le bouton du menu s'anime et porte un « ! » dès qu'on a de quoi ouvrir un coffre.
-    el('btn-chests').classList.toggle('ready', gold >= prices.single);
+    // Le bouton Boutique du menu et l'onglet Coffres s'animent et portent un « ! » dès qu'on a de quoi ouvrir un coffre.
+    const affordable = gold >= prices.single;
+    el('btn-shop').classList.toggle('ready', affordable);
+    el('tab-chests').classList.toggle('alert', affordable);
   }
 
-  /** Écran de collection : amulettes en stock (une équipée), puis les apparences par catégorie. */
+  /** Collection : les amulettes en stock (une équipée) et les apparences par catégorie. */
   private refreshCollection(): void {
     const { save } = this;
-    const body = el('collection-body');
-    body.replaceChildren();
 
-    const amuletBox = make('section', 'collection-section');
-    amuletBox.append(make('h3', 'section-title', 'Amulette de la prochaine partie'));
-    amuletBox.append(make('p', 'hint', 'Consommée au lancement : son effet ne dure que pour une partie. Plusieurs exemplaires la renforcent.'));
+    const amulets = el('amulets-body');
+    amulets.replaceChildren();
     const stock = AMULETS.filter((a) => (save.amulets[a.id] ?? 0) > 0);
-    if (stock.length === 0) amuletBox.append(make('p', 'hint', 'Aucune amulette pour l’instant : ouvrez des coffres !'));
+    const equippedBox = make('section', 'collection-section equipped-section');
+    equippedBox.append(make('h3', 'section-title', 'Équipée pour la prochaine partie'));
+    const reserveBox = make('section', 'collection-section');
+    reserveBox.append(make('h3', 'section-title', 'En réserve'));
     for (const a of stock) {
       const count = save.amulets[a.id];
       const equipped = save.amulet === a.id;
@@ -401,13 +457,24 @@ private refreshChests(): void {
         actions.append(equip);
       }
       row.append(iconElement('amulet-icon', a.icon), text, actions);
-      amuletBox.append(row);
+      (equipped ? equippedBox : reserveBox).append(row);
     }
-    body.append(amuletBox);
+    if (equippedBox.children.length === 1) equippedBox.append(make('p', 'hint', 'Aucune. Équipez-en une ci-dessous : elle est consommée au lancement de la partie, puis déséquipée.'));
+    amulets.append(equippedBox);
+    if (stock.length === 0) reserveBox.append(make('p', 'hint', 'Aucune amulette pour l’instant : ouvrez des coffres !'));
+    // Quand tout le stock est équipé, la réserve n'a rien à montrer.
+    if (reserveBox.children.length > 1) amulets.append(reserveBox);
 
+    const styles = el('styles-body');
+    styles.replaceChildren();
     for (const category of CATEGORIES) {
       const box = make('section', 'collection-section');
       box.append(make('h3', 'section-title', CATEGORY_LABELS[category]));
+      box.append(make('p', 'hint', CATEGORY_HELP[category]));
+      // Armes concernées. Une arme secrète (Mines) ne tire pas : elle n'a donc pas à être nommée ici.
+      const names = WEAPONS.filter((w) => w.projectiles).map((w) => w.name);
+      const applies = CATEGORY_WEAPONS[category] === 'all' ? 'toutes les armes' : `${names.join(' et ')} uniquement`;
+      box.append(make('p', 'hint applies', `Valable pour : ${applies}.`));
       const swatches = make('div', 'swatches');
       for (const c of COSMETICS[category]) {
         const owned = save.cosmetics[category].includes(c.id);
@@ -424,35 +491,87 @@ private refreshChests(): void {
         swatches.append(button);
       }
       box.append(swatches);
-      body.append(box);
+      styles.append(box);
     }
   }
 
-  /** Boutons des écrans « Coffres » et « Collection ». */
+  /** Cache le menu principal tant qu'un écran (boutique, collection, sauvegarde) est ouvert par-dessus : rien ne transparaît. */
+  private updateCover(): void {
+    const covered = [this.shop, this.saveScreen, this.collection].some((screen) => !screen.classList.contains('hidden'));
+    this.start.classList.toggle('covered', covered);
+    this.syncPreview();
+  }
+
+  /** Regarde un héros à acheter (null : on revient au héros choisi). */
+  private setTryHero(id: string | null): void {
+    if (this.tryHero === id) return;
+    this.tryHero = id;
+    this.handlers.onTryHero(id);
+    this.refresh();
+    // La fenêtre d'aperçu change de hauteur quand le bouton « Acheter » apparaît ou disparaît.
+    this.syncPreview();
+  }
+
+  /** Aperçu du héros en entier tant que l'onglet des héros de la collection est ouvert. */
+  private syncPreview(): void {
+    const showing = !this.collection.classList.contains('hidden') && this.collection.dataset.tab === 'heroes' && !this.start.classList.contains('hidden');
+    if (!showing) {
+      this.handlers.onPreview(null);
+      // On quitte l'écran des héros : le héros regardé sans être acheté est remis, c'est de nouveau le héros choisi qu'on voit.
+      this.setTryHero(null);
+      return;
+    }
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    if (width > height) {
+      // À l'horizontale : le héros occupe la moitié gauche, les cartes sont à droite.
+      this.handlers.onPreview({ top: height * 0.1, bottom: height * 0.94, centerX: width * 0.25 });
+      return;
+    }
+    const stage = el('hero-stage').getBoundingClientRect();
+    this.handlers.onPreview({ top: stage.top, bottom: stage.bottom, centerX: width / 2 });
+  }
+
+  /** Montre un onglet d'un écran (Boutique ou Collection) et cache les autres panneaux. */
+  private setTab(screen: HTMLElement, tab: string): void {
+    screen.dataset.tab = tab;
+    for (const button of screen.querySelectorAll<HTMLElement>('.tab')) {
+      const selected = button.dataset.tab === tab;
+      button.classList.toggle('selected', selected);
+      button.setAttribute('aria-selected', String(selected));
+    }
+    for (const panel of screen.querySelectorAll<HTMLElement>('.tab-panel')) panel.classList.toggle('hidden', panel.id !== `panel-${tab}`);
+    screen.scrollTo?.(0, 0);
+    this.syncPreview();
+  }
+
+  /** Boutons de la Boutique (onglets Améliorations et Coffres) et de la Collection (onglets Héros, Apparences, Amulettes). */
   private bindChestScreens(): void {
     const { handlers } = this;
     const open = (screen: HTMLElement) => {
       handlers.onNavigate();
       this.shop.classList.add('hidden');
       this.saveScreen.classList.add('hidden');
-      this.chestScreen.classList.add('hidden');
       this.collection.classList.add('hidden');
       screen.classList.remove('hidden');
+      this.updateCover();
     };
-    el('btn-chests').addEventListener('click', () => {
-      el('chest-status').textContent = '';
-      open(this.chestScreen);
-    });
+    // L'écran s'ouvre sur le dernier onglet regardé.
+    el('btn-shop').addEventListener('click', () => open(this.shop));
     el('btn-collection').addEventListener('click', () => open(this.collection));
-    el('btn-open-collection').addEventListener('click', () => open(this.collection));
-    el('btn-chests-back').addEventListener('click', () => {
-      handlers.onNavigate();
-      this.clearChestTimers();
-      this.chestScreen.classList.add('hidden');
-    });
+    for (const screen of [this.shop, this.collection]) {
+      for (const tab of screen.querySelectorAll<HTMLElement>('.tab')) {
+        tab.addEventListener('click', () => {
+          handlers.onNavigate();
+          if (tab.dataset.tab === 'chests') el('chest-status').textContent = '';
+          this.setTab(screen, tab.dataset.tab!);
+        });
+      }
+    }
     el('btn-collection-back').addEventListener('click', () => {
       handlers.onNavigate();
       this.collection.classList.add('hidden');
+      this.updateCover();
     });
     el('btn-chest-1').addEventListener('click', () => this.openChests(1));
     // Plein écran : un toucher ouvre le coffre qui tremble, ou passe à la carte suivante.
@@ -472,10 +591,6 @@ private clearChestTimers(): void {
 
   private later(ms: number, action: () => void): void {
     this.chestTimers.push(window.setTimeout(action, ms));
-  }
-
-  private vibrate(pattern: number[]): void {
-    navigator.vibrate?.(pattern);
   }
 
   /** Confettis qui tombent sur tout l'écran (plus il y en a, plus le contenu est rare). */
@@ -575,7 +690,6 @@ private clearChestTimers(): void {
 
     this.handlers.onChestSound('thud');
     this.handlers.onChestSound('rumble');
-    this.vibrate([90, 50, 40, 40, 40, 40, 40]);
     // Une secousse franche à l'impact, puis un tremblement continu pendant le grondement.
     this.reveal.classList.add('quake');
     this.later(420, () => {
@@ -613,7 +727,6 @@ private clearChestTimers(): void {
     this.later(520, () => this.reveal.classList.remove('quake'));
     this.burstSparks(view.tier);
     this.handlers.onChestSound('boom');
-    this.vibrate(view.tier === 'legendary' ? [80, 40, 160, 40, 240] : [70]);
     this.later(REVEAL_TIMING.burst, () => this.showRevealCard());
   }
 
@@ -636,7 +749,6 @@ private clearChestTimers(): void {
 
     this.handlers.onChestSound(view.tier);
     this.confetti(view.tier);
-    this.vibrate(view.tier === 'common' ? [40] : [50, 30, 90]);
     this.later(REVEAL_TIMING.admire, () => this.readyReveal());
   }
 
@@ -752,12 +864,13 @@ private clearChestTimers(): void {
   showMenu(): void {
     this.lowHp.classList.remove('active');
     this.refresh();
-    for (const node of [this.hud, this.shop, this.saveScreen, this.chestScreen, this.collection, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
+    for (const node of [this.hud, this.shop, this.saveScreen, this.collection, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
     this.start.classList.remove('hidden');
+    this.updateCover();
   }
 
   showGame(): void {
-    for (const node of [this.start, this.shop, this.saveScreen, this.chestScreen, this.collection, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
+    for (const node of [this.start, this.shop, this.saveScreen, this.collection, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
     this.hud.classList.remove('hidden');
   }
 

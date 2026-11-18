@@ -10,9 +10,9 @@
 
 /** Fichiers présents dans public/emoji (code Unicode de l'emoji, sans le sélecteur de variante FE0F). */
 export const EMOJI_CODES = [
-  '1f331', '1f33f', '1f381', '1f392', '1f3a8', '1f3c6', '1f451', '1f45f', '1f480', '1f4a5',
+  '1f331', '1f33f', '1f381', '1f392', '1f3a8','1f3b5', '1f3c6', '1f451', '1f45f', '1f480', '1f4a5',
   '1f4be', '1f4d8', '1f507', '1f50a', '1f512', '1f525', '1f531', '1f6e0', '1f9f2', '1f9ff',
-  '1fa99', '23f1', '23f8', '2694', '26a0', '26a1', '2714', '2764', '2b50',
+  '1fa99', '23f1', '23f8', '2694', '26a0', '26a1', '2764', '2b50',
 ] as const;
 
 const AVAILABLE = new Set<string>(EMOJI_CODES);

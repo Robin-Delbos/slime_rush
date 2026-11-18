@@ -17,7 +17,24 @@ export const CATEGORIES: CosmeticCategory[] = ['projectile', 'trail', 'dust'];
 export const CATEGORY_LABELS: Record<CosmeticCategory, string> = {
   projectile: 'Projectiles',
   trail: 'Traînées',
-  dust: 'Poussière',
+  dust: 'Poussière des pas',
+};
+
+/** Ce que change chaque catégorie, en une phrase. */
+export const CATEGORY_HELP: Record<CosmeticCategory, string> = {
+  projectile: 'Couleur des projectiles (balles, lances) et de l’éclat au départ du tir.',
+  trail: 'Traînée lumineuse qui suit chaque projectile.',
+  dust: 'Petits nuages que le héros soulève sous ses pieds quand il marche.',
+};
+
+/**
+ * Armes concernées : 'projectiles' = celles qui tirent des balles ou des lances (voir `projectiles` dans weaponData.ts),
+ * 'all' = toutes.
+ */
+export const CATEGORY_WEAPONS: Record<CosmeticCategory, 'projectiles' | 'all'> = {
+  projectile: 'projectiles',
+  trail: 'projectiles',
+  dust: 'all',
 };
 
 /** Identifiant de l'apparence de départ, possédée d'office dans chaque catégorie. */

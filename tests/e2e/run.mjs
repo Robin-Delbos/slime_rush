@@ -137,7 +137,7 @@ class Page {
       const inside = r.width > 0 && r.height > 0 && r.left >= -0.5 && r.right <= innerWidth + 0.5 && r.top >= -0.5 && r.bottom <= innerHeight + 0.5;
       const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
       const hit = top === el || el.contains(top);
-      return inside && (hit || !${JSON.stringify(needHit)}) ? 'ok' : 'hors écran ou recouvert (' + [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)].join(',') + ' dans ' + innerWidth + '×' + innerHeight + ', touchable=' + hit + ')';
+      return inside && (hit || !${JSON.stringify(needHit)}) ? 'ok' : 'hors écran ou recouvert (' + [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)].join(',') + ' dans ' + innerWidth + '×' + innerHeight + ', touchable=' + hit + (hit || !top ? '' : ', recouvert par ' + (top.id ? '#' + top.id : top.tagName.toLowerCase() + '.' + String(top.className).split(' ').join('.'))) + ')';
     })()`);
   }
 
@@ -188,7 +188,7 @@ async function scenario(page, url, viewport) {
   await page.waitFor('le chargement des modèles', `!!window.__game && document.querySelector('#btn-start') && !document.querySelector('#btn-start').disabled`);
   check((await page.game()).state === 'menu', 'le jeu démarre sur le menu');
   check((await page.game()).hasModel, 'le héros a un modèle 3D');
-  check((await page.eval(`document.querySelectorAll('.char-card').length`)) === 3, 'trois apparences sont proposées');
+  check((await page.eval(`document.querySelectorAll('.char-card').length`)) === 8, 'huit héros sont proposés');
   check((await page.eval(`document.querySelectorAll('.weapon-card').length`)) === 4, 'quatre armes de départ sont proposées');
   check((await page.eval(`document.querySelectorAll('.diff-btn').length`)) === 4, 'quatre difficultés sont proposées');
   check(await page.eval(`!!document.querySelector('.weapon-card[data-id="rifle"] .weapon-icon svg')`), 'la carabine a une icône dessinée');
@@ -196,8 +196,15 @@ async function scenario(page, url, viewport) {
   check(/^v\d+\.\d+\.\d+/.test((await page.text('#version')) ?? ''), `le menu affiche la version du jeu (${await page.text('#version')})`);
   check((await page.game()).weapon === 'rifle' && (await page.game()).difficulty === 'normal', 'carabine et difficulté normale par défaut');
   check(goldOf(await page.text('#menu-gold')) === 0, 'une sauvegarde neuve commence à 0 pièce');
+  check(await page.eval(`!!document.querySelector('#btn-shop') && !!document.querySelector('#btn-collection') && !document.querySelector('#btn-chests')`), 'le menu ne garde que Boutique et Collection (les coffres sont dans la boutique)');
+  check((await page.text('#weapon-desc')).startsWith('Carabine'), 'la description de l’arme choisie s’affiche sous les armes');
+  await page.click('#btn-collection');
+  check(await page.visible('#overlay-collection') && (await page.visible('#panel-heroes')) && !(await page.visible('#panel-styles')), 'la collection s’ouvre sur l’onglet des héros');
   await page.click('.char-card[data-id="bolt"]');
-  check((await page.game()).selected === 'ombre', 'sans or, une apparence payante reste verrouillée');
+  check((await page.game()).selected === 'ombre', 'sans or, un héros payant reste verrouillé');
+  check((await page.game()).trying === 'bolt' && (await page.visible('#btn-buy-hero')) && (await page.eval(`document.querySelector('#btn-buy-hero').disabled`)), 'cliquer sur un héros à acheter le montre, avec un bouton « Acheter » grisé faute de pièces');
+  await page.click('#btn-collection-back');
+  check((await page.game()).trying === null, 'quitter la collection remet le héros choisi à l’écran');
   await page.click('.weapon-card[data-id="aura"]');
   check((await page.game()).weapon === 'rifle', 'sans or, une arme payante reste verrouillée');
   await sleep(600);
@@ -206,6 +213,7 @@ async function scenario(page, url, viewport) {
   // --- Boutique ---
   await page.click('#btn-shop');
   check(await page.visible('#overlay-shop'), 'la boutique s’ouvre');
+  check((await page.visible('#panel-upgrades')) && !(await page.visible('#panel-chests')), 'la boutique s’ouvre sur l’onglet des améliorations');
   check(await page.eval(`[...document.querySelectorAll('.shop-buy')].every((b) => b.disabled)`), 'sans or, tous les achats sont désactivés');
   await page.eval('window.__game.addGold(3000)');
   await page.click('.shop-buy[data-id="vitality"]');
@@ -213,12 +221,40 @@ async function scenario(page, url, viewport) {
   check((await page.text('.shop-row .shop-level')).trim() === '1 / 10', 'le niveau de l’amélioration augmente');
   await shot('2-boutique');
 
-  // --- Apparences (dans la boutique) ---
-  await page.click('.char-card[data-id="bolt"]');
-  check((await page.game()).selected === 'bolt', 'une apparence abordable est achetée et sélectionnée');
-  check(goldOf(await page.text('#shop-gold')) === 1980, 'l’achat de l’apparence débite son prix');
+  await page.click('#tab-chests');
+  check((await page.visible('#panel-chests')) && !(await page.visible('#panel-upgrades')), 'l’onglet Coffres remplace les améliorations');
+  await page.click('#tab-upgrades');
+  check(await page.visible('#panel-upgrades'), 'on revient aux améliorations');
+  // Le titre et les onglets restent à la même hauteur d'un onglet à l'autre, quel que soit le contenu.
+  const heads = async (screen) => page.eval(`(() => ['h2', '.tabs'].map((sel) => Math.round(document.querySelector('${screen} ' + sel).getBoundingClientRect().top)).join(','))()`);
+  const upgradesHead = await heads('#overlay-shop');
+  await page.click('#tab-chests');
+  check((await heads('#overlay-shop')) === upgradesHead, `boutique : le titre et les onglets sont au même niveau sur tous les onglets (${upgradesHead})`);
+  await page.click('#tab-upgrades');
   await page.click('#btn-shop-back');
   check(!(await page.visible('#overlay-shop')), 'la boutique se ferme');
+
+  // --- Héros (dans la collection) ---
+  await page.click('#btn-collection');
+  await page.click('.char-card[data-id="bolt"]');
+  check((await page.game()).selected === 'ombre' && goldOf(await page.text('#menu-gold')) === 2980, 'cliquer sur un héros abordable ne l’achète pas : on le voit d’abord');
+  check((await page.game()).trying === 'bolt' && (await page.text('#hero-desc')).startsWith('Bolt'), 'le héros à acheter est montré dans l’aperçu, avec sa description');
+  check((await page.text('#btn-buy-hero')).includes('Bolt') && !(await page.eval(`document.querySelector('#btn-buy-hero').disabled`)), 'le bouton « Acheter » propose le héros et son prix');
+  await page.click('.char-card[data-id="ombre"]');
+  check((await page.game()).selected === 'ombre' && (await page.game()).trying === null && !(await page.visible('#btn-buy-hero')), 'choisir un héros possédé annule l’aperçu du héros à acheter');
+  await page.click('.char-card[data-id="bolt"]');
+  await page.click('#btn-buy-hero');
+  check((await page.game()).selected === 'bolt' && (await page.game()).trying === null, 'le bouton « Acheter » achète le héros et le sélectionne');
+  await shot('2b-collection-heros');
+  const heroesHead = await page.eval(`(() => ['h2', '.tabs'].map((sel) => Math.round(document.querySelector('#overlay-collection ' + sel).getBoundingClientRect().top)).join(','))()`);
+  for (const tab of ['styles', 'amulets', 'heroes']) {
+    await page.click(`#tab-${tab}`);
+    const head = await page.eval(`(() => ['h2', '.tabs'].map((sel) => Math.round(document.querySelector('#overlay-collection ' + sel).getBoundingClientRect().top)).join(','))()`);
+    check(head === heroesHead, `collection : le titre et les onglets ne bougent pas sur l'onglet ${tab} (${head} contre ${heroesHead})`);
+  }
+  await page.click('#btn-collection-back');
+  check(!(await page.visible('#overlay-collection')), 'la collection se ferme');
+  check(goldOf(await page.text('#menu-gold')) === 1980, 'l’achat du héros débite son prix');
 
   // --- Armes et difficulté ---
   await page.eval('window.__game.addGold(500)');
@@ -293,6 +329,46 @@ async function scenario(page, url, viewport) {
   await page.click('#overlay-levelup:not(.hidden) .card');
   await page.click('#btn-pause');
   check((await page.game()).state === 'paused' && (await page.visible('#overlay-pause')), 'le bouton pause ouvre le menu de pause');
+  // Les textes des barres (niveau, PV) doivent passer sous l'écran de pause, donc être floutés avec le reste du jeu.
+  // On rend d'abord le HUD sensible au pointeur : sinon la recherche d'élément ignorerait ses textes.
+  const coveredByPause = await page.eval(`(() => {
+    const probe = document.createElement('style');
+    probe.textContent = '#hud, #hud * { pointer-events: auto !important }';
+    document.head.append(probe);
+    const result = ['#level', '#hp-label', '#timer'].map((sel) => {
+      const r = document.querySelector(sel).getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return top && top.closest('#overlay-pause') ? 'ok' : sel + ' passe au-dessus de la pause';
+    });
+    probe.remove();
+    return result;
+  })()`);
+  check(coveredByPause.every((r) => r === 'ok'), `la pause recouvre (et floute) aussi le niveau et les PV${coveredByPause.some((r) => r !== 'ok') ? ' : ' + coveredByPause.join(', ') : ''}`);
+  // Les titres des écrans sont nets : une seule ombre fine, plus d'ombres empilées.
+  const titleShadow = await page.eval(`getComputedStyle(document.querySelector('#overlay-pause h2')).textShadow`);
+  check(titleShadow.split('rgba').length - 1 + titleShadow.split('rgb(').length - 1 <= 1, `le titre « Pause » n’a qu’une ombre fine (${titleShadow})`);
+  // Musique : on peut la couper seule depuis la pause, et le choix est conservé.
+  check((await page.text('#btn-music')).includes('oui') && !(await page.game()).audio.silenced, 'la musique est active par défaut');
+  await page.click('#btn-music');
+  check((await page.text('#btn-music')).includes('non') && (await page.game()).audio.silenced, 'le bouton de la pause coupe la musique');
+  check(await page.eval(`JSON.parse(localStorage.getItem('slime-rush.save')).music === false`), 'la musique coupée est enregistrée');
+  check(await page.eval(`!document.querySelector('#overlay-pause').classList.contains('hidden')`), 'couper la musique laisse la pause ouverte');
+  await shot('5c0-pause-musique-coupee');
+  await page.click('#btn-music');
+  check((await page.text('#btn-music')).includes('oui') && !(await page.game()).audio.silenced, 'on remet la musique depuis la pause');
+  // Tout le son : le bouton de la pause coupe aussi la musique, sans toucher au réglage « musique ».
+  check((await page.text('#btn-sound-pause')).includes('oui'), 'le son est actif par défaut');
+  await page.click('#btn-sound-pause');
+  check((await page.text('#btn-sound-pause')).includes('non') && (await page.game()).audio.silenced, 'le bouton de la pause coupe tout le son, musique comprise');
+  check(await page.eval(`JSON.parse(localStorage.getItem('slime-rush.save')).muted === true && JSON.parse(localStorage.getItem('slime-rush.save')).music === true`), 'le son coupé est enregistré, sans changer le réglage de la musique');
+  check(await page.eval(`document.querySelector('#btn-sound img.emoji')?.alt === '🔇'`), 'le bouton du menu reflète le son coupé');
+  check(await page.eval(`document.querySelector('#btn-music').disabled && document.querySelector('#btn-music-menu').disabled`), 'sans son, les boutons de la musique sont grisés (pause et menu)');
+  check((await page.text('#btn-music')).includes('non'), 'sans son, la pause indique que la musique est coupée aussi');
+  await page.click('#btn-music');
+  check(await page.eval(`JSON.parse(localStorage.getItem('slime-rush.save')).music === true`), 'un bouton grisé ne change rien au réglage de la musique');
+  await page.click('#btn-sound-pause');
+  check((await page.text('#btn-sound-pause')).includes('oui') && !(await page.game()).audio.silenced, 'on remet tout le son depuis la pause');
+  check(await page.eval(`!document.querySelector('#btn-music').disabled && !document.querySelector('#btn-music-menu').disabled`), 'avec le son, les boutons de la musique redeviennent actifs');
   const frozen = (await page.game()).time;
   await sleep(500);
   check((await page.game()).time === frozen, 'le temps de partie est figé pendant la pause');
@@ -527,6 +603,7 @@ async function orientationScenario(page, url, device) {
   await checkNoOverflow(page, 'menu');
   await checkReachable(page, 'menu : tout est atteignable au doigt', [
     '#overlay-start .logo svg',
+    '#btn-music-menu',
     '#btn-sound',
     '#btn-save',
     '.weapon-card[data-id="rifle"]',
@@ -535,6 +612,7 @@ async function orientationScenario(page, url, device) {
     '.diff-btn[data-id="extreme"]',
     '#btn-shop',
     '#btn-start',
+    '#btn-collection',
   ]);
   await page.eval('window.scrollTo(0, 0); document.querySelector("#overlay-start").scrollTo(0, 0)');
   await shot('1-menu');
@@ -542,7 +620,7 @@ async function orientationScenario(page, url, device) {
   // --- Boutique et sauvegarde ---
   await page.tapElement('#btn-shop');
   check(await page.visible('#overlay-shop'), 'la boutique s’ouvre au doigt');
-  await checkReachable(page, 'boutique : achats, apparences et retour atteignables', ['.shop-row:first-child .shop-buy', '.shop-row:last-child .shop-buy', '.char-card[data-id="bolt"]', '#btn-shop-back']);
+  await checkReachable(page, 'boutique : onglets, achats et retour atteignables', ['#tab-upgrades', '#tab-chests', '.shop-row:first-child .shop-buy', '.shop-row:last-child .shop-buy', '#btn-shop-back']);
   await page.eval('document.querySelector("#overlay-shop").scrollTo(0, 0)');
   await shot('2-boutique');
   await page.tapElement('#btn-shop-back');
@@ -555,13 +633,17 @@ async function orientationScenario(page, url, device) {
 
   // --- Coffres : arme secrète, amulettes, apparence ; puis collection ---
   await page.eval('window.__game.addGold(6000)');
-  check(await page.reachable('#btn-chests') === 'ok' && await page.reachable('#btn-collection') === 'ok', 'les boutons Coffres et Collection sont atteignables au menu');
-  check(await page.eval(`document.querySelector('#btn-chests').classList.contains('ready')`), 'le bouton Coffres s’anime quand on a de quoi ouvrir un coffre');
+  check(await page.reachable('#btn-shop') === 'ok' && await page.reachable('#btn-collection') === 'ok', 'les boutons Boutique et Collection sont atteignables au menu');
+  check(await page.eval(`document.querySelector('#btn-shop').classList.contains('ready')`), 'le bouton Boutique s’anime quand on a de quoi ouvrir un coffre');
   await page.eval('document.querySelector("#overlay-start").scrollTo(0, 0)');
   await shot('2a-menu-coffre-pret');
-  await page.tapElement('#btn-chests');
-  check(await page.visible('#overlay-chests'), 'l’écran des coffres s’ouvre au doigt');
-  await checkReachable(page, 'coffres : les deux offres, la collection et le retour sont atteignables', ['#btn-chest-1', '#btn-chest-3', '#btn-open-collection', '#btn-chests-back']);
+  await page.tapElement('#btn-shop');
+  await page.tapElement('#tab-chests');
+  check((await page.visible('#overlay-shop')) && (await page.visible('#panel-chests')), 'l’onglet Coffres de la boutique s’ouvre au doigt');
+  check(await page.eval(`document.querySelector('#tab-chests').classList.contains('alert')`), 'l’onglet Coffres porte une pastille quand un coffre est abordable');
+  await page.eval('document.querySelector("#overlay-shop").scrollTo(0, 0)');
+  await shot('2a0-boutique-coffres');
+  await checkReachable(page, 'coffres : les deux offres, les onglets et le retour sont atteignables', ['#btn-chest-1', '#btn-chest-3', '#tab-upgrades', '#btn-shop-back']);
   const openWhole = `!document.querySelector('#overlay-reveal').classList.contains('hidden')`;
   const phase = (name) => `document.querySelector('#overlay-reveal').dataset.phase === '${name}'`;
   // Tout doit tenir dans l'écran SANS défiler (le plein écran ne défile pas) : on ne fait donc aucun scrollIntoView ici.
@@ -627,13 +709,36 @@ async function orientationScenario(page, url, device) {
   // Plus assez de pièces : les offres sont grisées.
   await page.eval('window.__game.addGold(-1400)');
   check((await page.eval(`document.querySelector('#btn-chest-1').disabled && document.querySelector('#btn-chest-3').disabled`)), 'sans assez de pièces, les offres sont grisées');
-  await page.tapElement('#btn-open-collection');
+  await page.tapElement('#btn-shop-back');
+  await page.tapElement('#btn-collection');
   check(await page.visible('#overlay-collection'), 'la collection s’ouvre au doigt');
-  await checkReachable(page, 'collection : amulette, apparences et retour atteignables', ['.amulet-row[data-id="sage"] .amulet-toggle', '.swatch[data-category="projectile"][data-id="crimson"]', '.swatch[data-category="dust"][data-id="default"]', '#btn-collection-back']);
+  await checkReachable(page, 'collection : onglets, huit héros et retour atteignables', ['#tab-heroes', '#tab-styles', '#tab-amulets', '.char-card[data-id="ombre"]', '.char-card[data-id="anne"]', '.char-card[data-id="sam"]', '.char-card[data-id="pirate"]', '.char-card[data-id="lis"]', '.char-card[data-id="matt"]', '#btn-collection-back']);
+  await page.eval('document.querySelector("#overlay-collection").scrollTo(0, 0)');
+  await shot('2d0-collection-heros');
+  // Aperçu : le héros se voit en entier (de la tête aux pieds) dans la zone prévue pour lui, sans être masqué par les cartes.
+  await sleep(1300);
+  const preview = await page.eval(`(() => {
+    const b = window.__game.heroBox();
+    const stage = document.querySelector('#hero-stage').getBoundingClientRect();
+    return { previewing: window.__game.state().previewing, top: b.top, bottom: b.bottom, x: b.x, stageTop: stage.top, stageBottom: stage.bottom, w: innerWidth, h: innerHeight };
+  })()`);
+  check(preview.previewing, 'la collection montre l’aperçu du héros');
+  if (preview.h > preview.w) {
+    check(preview.top >= preview.stageTop - 4 && preview.bottom <= preview.stageBottom + 4, `le héros se voit en entier dans la fenêtre d’aperçu (tête ${Math.round(preview.top)}, pieds ${Math.round(preview.bottom)}, fenêtre ${Math.round(preview.stageTop)}–${Math.round(preview.stageBottom)})`);
+    check(preview.stageBottom - preview.stageTop >= 150, 'la fenêtre d’aperçu est assez haute');
+  } else {
+    check(preview.top >= 0 && preview.bottom <= preview.h && preview.x < preview.w * 0.5, `le héros se voit en entier, dans la moitié gauche de l’écran (tête ${Math.round(preview.top)}, pieds ${Math.round(preview.bottom)})`);
+  }
+  await page.tapElement('#tab-amulets');
+  check(!(await page.game()).previewing, 'l’aperçu du héros s’arrête quand on quitte l’onglet des héros');
+  check((await page.visible('#panel-amulets')) && !(await page.visible('#panel-heroes')), 'l’onglet Amulettes remplace celui des héros');
+  await checkReachable(page, 'collection : amulette et retour atteignables', ['.amulet-row[data-id="sage"] .amulet-toggle', '#btn-collection-back']);
   await page.tapElement('.amulet-row[data-id="sage"] .amulet-toggle');
   check((await page.game()).amulet === 'sage', 'l’amulette est équipée');
   await page.tapElement('.amulet-row.equipped .amulet-actions button:nth-child(2)');
   check((await page.text('.amulet-row.equipped .amulet-desc')).includes('Niveau 2'), 'on peut renforcer l’amulette avec un second exemplaire');
+  await page.tapElement('#tab-styles');
+  await checkReachable(page, 'collection : apparences atteignables', ['.swatch[data-category="projectile"][data-id="crimson"]', '.swatch[data-category="dust"][data-id="default"]', '#btn-collection-back']);
   await page.tapElement('.swatch[data-category="projectile"][data-id="crimson"]');
   check((await page.game()).style.projectile === 'crimson', 'l’apparence trouvée se sélectionne');
   check(await page.eval(`document.querySelector('.swatch[data-category="projectile"][data-id="cyan"]').disabled`), 'une apparence non trouvée reste verrouillée');
@@ -646,6 +751,7 @@ async function orientationScenario(page, url, device) {
   await page.waitFor('la partie', 'window.__game.state().state === "playing"', 5000);
   const worn = await page.game();
   check(worn.amulets.sage === 1, 'l’amulette (niveau 2) est consommée au lancement : 2 exemplaires sur 3');
+  check(worn.amulet === '', 'l’amulette est déséquipée dès que la partie commence, même s’il en reste');
   check(Math.abs(worn.xpMult - 1.5) < 0.001, `l’amulette renforce le héros pour cette partie (XP ×${worn.xpMult})`);
   await sleep(500);
   // L'interface de jeu laisse passer les appuis vers le terrain : on vérifie qu'elle est visible, et que seul le bouton pause se touche.
@@ -811,6 +917,8 @@ const PLATFORMS = [
 /** Ce qu'iOS a de différent, injecté dans la page avant tout le reste. */
 function platformShims(platform) {
   const lines = [];
+  // Sur Android, la vibration existe : on la compte pour vérifier que le jeu ne s'en sert pas.
+  if (!platform.ios) lines.push("Object.defineProperty(Navigator.prototype, 'vibrate', { value: () => { window.__vibrations = (window.__vibrations || 0) + 1; return true; }, configurable: true });");
   // iOS n'a pas de vibration.
   if (platform.ios) lines.push("Object.defineProperty(Navigator.prototype, 'vibrate', { value: undefined, configurable: true });");
   if (platform.oldAudio) lines.push("window.webkitAudioContext = window.AudioContext; Object.defineProperty(window, 'AudioContext', { value: undefined, configurable: true });");
@@ -896,7 +1004,8 @@ async function platformScenario(page, url, platform) {
   // --- Un coffre en plein écran ---
   await page.eval('window.__game.addGold(5000)');
   await page.eval('window.__game.chestRandom([0.001, 0.5])');
-  await page.tapElement('#btn-chests');
+  await page.tapElement('#btn-shop');
+  await page.tapElement('#tab-chests');
   await page.tapElement('#btn-chest-1');
   await page.waitFor('la carte du coffre', `!!document.querySelector('#overlay-reveal .reveal-card')`, 6000);
   await sleep(1200);
@@ -905,9 +1014,205 @@ async function platformScenario(page, url, platform) {
   await shot('3-coffre');
   await page.tapElement('#reveal-close');
   check(!(await page.visible('#overlay-reveal')), 'le plein écran du coffre se referme');
+  check((await page.eval('window.__vibrations ?? 0')) === 0, 'ouvrir un coffre ne fait jamais vibrer le téléphone');
   check(page.problems.length === 0, `aucune erreur ni avertissement dans la console${page.problems.length ? ' :\n' + page.problems.join('\n') : ''}`);
 
   if (shim) await page.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: shim.identifier });
+}
+
+/** Les cadres (cartes, boutons, pastilles, barres...) dont le texte ne doit jamais dépasser. */
+const TEXT_FRAMES = '.weapon-card, .diff-btn, .char-card, .side-btn, .btn, .tab, .pill, .shop-row, .swatch, .amulet-row, .card, .reveal-mini, .reveal-card, .bar, .collection-section, .save-box, #banner, .boss-bar, .stats';
+
+/** Liste les textes qui sortent de leur cadre (liste vide : tout tient). */
+function textOverflows(page) {
+  return page.eval(`(() => {
+    const bad = [];
+    const visible = (el) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' && !el.closest('.hidden');
+    };
+    const name = (el) => (el.id ? '#' + el.id : el.tagName.toLowerCase() + '.' + String(el.className).trim().split(/\\s+/).join('.'));
+    for (const frame of document.querySelectorAll(${JSON.stringify(TEXT_FRAMES)})) {
+      if (!visible(frame)) continue;
+      const fr = frame.getBoundingClientRect();
+      const walker = document.createTreeWalker(frame, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const text = node.textContent.trim();
+        if (!text || !node.parentElement || !visible(node.parentElement)) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        for (const r of range.getClientRects()) {
+          if (r.width < 1) continue;
+          // L'étiquette de rareté est un ruban posé à cheval sur le haut de la carte : il dépasse volontairement vers le haut.
+          const ribbon = node.parentElement.closest('.reveal-tier-label') ? 16 : 1;
+          // Hors du cadre, ou hors de l'écran (un cadre trop large coupé par les bords).
+          const offscreen = r.left < -1 || r.right > innerWidth + 1;
+          if (offscreen || r.left < fr.left - 1 || r.right > fr.right + 1 || r.top < fr.top - ribbon || r.bottom > fr.bottom + 1) {
+            bad.push(name(frame) + ' : « ' + text.slice(0, 36) + ' » dépasse du cadre ou de l’écran (texte ' + [r.left, r.top, r.right, r.bottom].map(Math.round).join(',') + ', cadre ' + [fr.left, fr.top, fr.right, fr.bottom].map(Math.round).join(',') + ')');
+            break;
+          }
+        }
+      }
+    }
+    return bad;
+  })()`);
+}
+
+/** Pour chaque paire [icône, texte], l'icône ne doit pas recouvrir le texte. */
+function overlapsBetween(page, pairs) {
+  return page.eval(`${JSON.stringify(pairs)}.flatMap(([iconSel, textSel]) => {
+    const out = [];
+    for (const icon of document.querySelectorAll(iconSel)) {
+      const ir = icon.getBoundingClientRect();
+      if (ir.width === 0 || icon.closest('.hidden')) continue;
+      const scope = icon.closest('.weapon-card, #hp-bar, .char-card') ?? document;
+      for (const target of scope.querySelectorAll(textSel)) {
+        const range = document.createRange();
+        range.selectNodeContents(target);
+        for (const r of range.getClientRects()) {
+          if (r.width < 1) continue;
+          if (r.left < ir.right - 1 && ir.left < r.right - 1 && r.top < ir.bottom - 1 && ir.top < r.bottom - 1) out.push(iconSel + ' recouvre ' + textSel + ' (' + (target.textContent || '').trim().slice(0, 24) + ')');
+        }
+      }
+    }
+    return out;
+  })`);
+}
+
+/** Dans les cases d'armes d'une même ligne, icônes, noms et « Choisir » doivent être à la même hauteur. */
+async function checkWeaponAlignment(page, label) {
+  const problems = await page.eval(`(() => {
+    const cards = [...document.querySelectorAll('.weapon-card')].filter((c) => c.getBoundingClientRect().width > 0);
+    const rows = new Map();
+    for (const card of cards) {
+      const key = Math.round(card.getBoundingClientRect().top);
+      rows.set(key, [...(rows.get(key) ?? []), card]);
+    }
+    const out = [];
+    for (const [, row] of rows) {
+      for (const part of ['.weapon-icon', '.char-name', '.char-status']) {
+        const tops = row.map((c) => c.querySelector(part).getBoundingClientRect().top);
+        if (Math.max(...tops) - Math.min(...tops) > 1) out.push(part + ' à des hauteurs différentes : ' + tops.map(Math.round).join(', '));
+      }
+    }
+    return out;
+  })()`);
+  check(problems.length === 0, `${label} : icônes, noms et statuts des armes sont alignés${problems.length ? ' :\n    ' + problems.join('\n    ') : ''}`);
+}
+
+async function checkTexts(page, label, pairs = []) {
+  const overflow = await textOverflows(page);
+  const overlaps = pairs.length ? await overlapsBetween(page, pairs) : [];
+  const problems = [...overflow, ...overlaps];
+  check(problems.length === 0, `${label} : les textes tiennent dans leurs cadres${problems.length ? ' :\n    ' + problems.join('\n    ') : ''}`);
+}
+
+const TEXT_SIZES = [
+  { name: 'tres-petit', width: 320, height: 568 },
+  { name: 'petit', width: 360, height: 640 },
+  { name: 'petit-horizontal', width: 667, height: 375 },
+];
+
+/**
+ * Sur de petits écrans : les textes des armes, héros, niveaux, boutons, cartes et barres restent dans leurs cadres,
+ * même avec de très grands nombres, et le cœur de la barre de vie ne recouvre pas les PV.
+ */
+async function textScenario(page, url, size) {
+  const shot = (name) => page.screenshot(`texte-${size.name}-${name}`);
+  await setDevice(page, size.width, size.height);
+  await page.send('Page.navigate', { url: `${url}?debug` });
+  await page.waitFor('la page de jeu', `!!document.querySelector('#btn-start')`);
+  await page.eval('localStorage.clear()');
+  await page.send('Page.navigate', { url: `${url}?debug` });
+  await page.waitFor('le chargement des modèles', `!!window.__game && document.querySelector('#btn-start') && !document.querySelector('#btn-start').disabled`);
+  await page.eval('window.__game.addGold(987654); window.__game.unlockAll(); window.__game.giveAmulets(3)');
+  await sleep(600);
+  const BADGES = [['.legend-badge', '.char-name'], ['.legend-badge', '.char-status'], ['.legend-badge', '.weapon-icon']];
+
+  // --- Menu : cinq armes avec badges, difficultés, boutons ---
+  await checkTexts(page, 'menu', BADGES);
+  await checkWeaponAlignment(page, 'menu à cinq armes');
+  await shot('1-menu');
+  for (const id of ['easy', 'normal', 'hard', 'extreme']) {
+    await page.click(`.diff-btn[data-id="${id}"]`);
+    await checkTexts(page, `menu en difficulté ${id}`);
+  }
+  await page.click('.diff-btn[data-id="normal"]');
+
+  // --- Boutique et collection ---
+  await page.click('#btn-shop');
+  await sleep(200);
+  await checkTexts(page, 'boutique (améliorations)');
+  await page.click('#tab-chests');
+  await checkTexts(page, 'boutique (coffres)');
+  await shot('2-boutique-coffres');
+  await page.click('#btn-shop-back');
+  await page.click('#btn-collection');
+  await checkTexts(page, 'collection (héros)');
+  await shot('3-collection-heros');
+  await page.click('.char-card[data-id="matt"]');
+  await checkTexts(page, 'collection (héros à acheter, bouton Acheter)');
+  await page.click('#tab-styles');
+  await checkTexts(page, 'collection (apparences)');
+  await page.click('#tab-amulets');
+  await page.click('.amulet-row .amulet-toggle');
+  await page.click('.amulet-row.equipped .amulet-actions button:nth-child(2)');
+  await checkTexts(page, 'collection (amulettes)');
+  await shot('4-collection-amulettes');
+  await page.click('#btn-collection-back');
+  await page.click('#btn-save');
+  await checkTexts(page, 'sauvegarde');
+  await page.click('#btn-save-back');
+
+  // --- Partie avec des chiffres énormes (PV, niveau, ennemis tués, or) ---
+  await page.click('#btn-start');
+  await page.waitFor('la partie', 'window.__game.state().state === "playing"', 5000);
+  await page.eval('window.__game.hudStress()');
+  await sleep(500);
+  await checkTexts(page, 'jeu avec de grands nombres', [['#hp-bar .bar-icon', '#hp-label']]);
+  await shot('5-jeu-grands-nombres');
+  const hpText = (await page.text('#hp-label')).trim();
+  check(hpText === '9999 / 9999', `la barre de vie affiche les grands nombres (${hpText})`);
+  await page.eval('window.__game.levelUp()');
+  await page.waitFor('le choix de niveau', `!document.querySelector('#overlay-levelup').classList.contains('hidden')`, 5000);
+  await sleep(1000);
+  await checkTexts(page, 'choix d’amélioration');
+  await shot('6-niveau-superieur');
+  await page.click('#overlay-levelup:not(.hidden) .card');
+  await page.click('#btn-pause');
+  await sleep(300);
+  await checkTexts(page, 'pause');
+  await page.click('#btn-quit');
+  await sleep(1800);
+  await checkTexts(page, 'fin de partie');
+  await shot('7-fin');
+  await page.click('#btn-menu');
+
+  // --- Coffres : arme secrète (long texte), puis trois coffres et leur récapitulatif ---
+  await page.click('#btn-shop');
+  await page.click('#tab-chests');
+  await page.eval('window.__game.chestRandom([0.001, 0.5])');
+  await page.click('#btn-chest-1');
+  await page.waitFor('la carte du coffre', `!!document.querySelector('#overlay-reveal .reveal-card')`, 6000);
+  await sleep(1300);
+  await checkTexts(page, 'carte de coffre');
+  await shot('8-carte-coffre');
+  await page.waitFor('les boutons de fin', `!document.querySelector('#reveal-actions').classList.contains('hidden')`, 4000);
+  await checkTexts(page, 'fin de coffre');
+  await page.click('#reveal-close');
+  await page.eval('window.__game.chestRandom([0.2, 0])');
+  await page.click('#btn-chest-3');
+  for (let i = 1; i <= 3; i++) {
+    await page.waitFor(`la carte ${i} sur 3`, `document.querySelector('#overlay-reveal').dataset.phase === 'card-ready'`, 8000);
+    if (i === 1) await checkTexts(page, 'carte d’amulette');
+    await page.click('#overlay-reveal');
+  }
+  await page.waitFor('le récapitulatif', `document.querySelector('#overlay-reveal').dataset.phase === 'end' && document.querySelectorAll('.reveal-mini').length === 3`, 5000);
+  await sleep(500);
+  await checkTexts(page, 'récapitulatif des coffres');
+  await shot('9-recapitulatif');
+  await page.click('#reveal-close');
+  check(page.problems.length === 0, `aucune erreur ni avertissement dans la console${page.problems.length ? ' :\n' + page.problems.join('\n') : ''}`);
 }
 
 async function main() {
@@ -968,6 +1273,13 @@ async function main() {
         console.log(`\nTéléphone ${device.name} (${device.width}×${device.height}), puis pivoté`);
         page.problems.length = 0;
         await orientationScenario(page, url, device);
+      }
+    }
+    if (!only || only === 'texts') {
+      for (const size of TEXT_SIZES) {
+        console.log(`\nTextes sur écran ${size.name} (${size.width}×${size.height})`);
+        page.problems.length = 0;
+        await textScenario(page, url, size);
       }
     }
     if (!only || only === 'platforms') {

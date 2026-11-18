@@ -28,6 +28,8 @@ export interface WeaponDef {
   cost: number;
   /** Arme exclusive aux coffres : absente de la boutique, invisible au menu tant qu'elle n'est pas trouvée. */
   chest?: boolean;
+  /** L'arme tire des projectiles (balles, lances) : les apparences « projectile » et « traînée » ne la concernent que dans ce cas. */
+  projectiles?: boolean;
   levels: WeaponLevel[];
 }
 
@@ -96,6 +98,7 @@ export const WEAPONS: WeaponDef[] = [
     name: 'Carabine',
     desc: 'Tire sur l’ennemi le plus proche',
     cost: 0,
+    projectiles: true,
     levels: [
       lv('Tire sur l’ennemi le plus proche', 1, 0.55, 1, 0, 0),
       lv('+1 projectile', 1, 0.55, 2, 0, 0),
@@ -141,6 +144,7 @@ export const WEAPONS: WeaponDef[] = [
     name: 'Lance',
     desc: 'Transperce toute une ligne d’ennemis',
     cost: 3000,
+    projectiles: true,
     levels: [
       lv('Transperce toute une ligne d’ennemis', 2.4, 1.3, 1, 99, 0.5),
       lv('+30 % de dégâts', 3.1, 1.3, 1, 99, 0.5),

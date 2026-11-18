@@ -457,6 +457,25 @@ describe('Weapons', () => {
     });
   });
 
+  describe('Armes à projectiles (apparences)', () => {
+    it('marque comme « à projectiles » exactement les armes qui tirent des balles ou des lances', () => {
+      for (const def of WEAPONS) {
+        const s = setup(def.id);
+        let shots = 0;
+        let seen = 0;
+        s.weapons.onShoot = () => shots++;
+        // Des ennemis proches, qui ne bougent pas : toute arme qui tire le fera.
+        for (const x of [4, 6, 8]) placeEnemy(s.enemies, x, 0, enemyType('orc'));
+        for (let t = 0; t < 3; t += STEP) {
+          s.weapons.update(STEP, t, s.player, s.enemies);
+          seen = Math.max(seen, s.weapons.shotCount);
+        }
+        const fires = shots > 0 && seen > 0;
+        expect(fires, `${def.id} : tire des projectiles`).toBe(def.projectiles === true);
+      }
+    });
+  });
+
   describe('Carabine', () => {
     it('tire sur l’ennemi à portée et le blesse', () => {
       const s = setup();

@@ -24,6 +24,16 @@ export function toonMaterial(color: THREE.ColorRepresentation): THREE.MeshToonMa
 
 export type CameraMode = 'menu' | 'play';
 
+/** Zone de l'écran (en pixels) où le héros doit apparaître en entier : de `top` à `bottom`, centré sur `centerX`. */
+export interface PreviewView {
+  top: number;
+  bottom: number;
+  centerX: number;
+}
+
+/** Hauteur du héros dans la scène (voir HERO_HEIGHT dans assets.ts). */
+const PREVIEW_HERO_HEIGHT = 1.9;
+
 export class World {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
@@ -34,6 +44,8 @@ export class World {
   private sky: THREE.CanvasTexture | null = null;
   private portrait = false;
   private mode: CameraMode = 'menu';
+  /** Cadrage d'aperçu du héros (écran des héros de la collection), ou null. */
+  private preview: PreviewView | null = null;
   /** Position de la caméra par rapport au joueur, lissée d'un mode à l'autre. */
   private offset = new THREE.Vector3(0, 2.3, 6);
   private targetOffset = new THREE.Vector3();
@@ -112,6 +124,11 @@ export class World {
     this.mode = mode;
   }
 
+  /** Cadre le héros en entier dans une zone de l'écran (null : retour au gros plan du menu). */
+  setPreview(view: PreviewView | null): void {
+    this.preview = view;
+  }
+
   /** Secoue la caméra (dégâts subis, mort d'un gros ennemi). */
   shake(amount: number): void {
     this.trauma = Math.min(1, this.trauma + amount);
@@ -122,12 +139,22 @@ export class World {
     const play = this.mode === 'play';
     // En portrait le champ horizontal est étroit : on recule la caméra.
     const zoom = this.portrait ? 1.35 : 1;
+    let lookTarget = play ? 0.5 : 1.1;
     if (play) this.targetOffset.set(0, 14 * zoom, 13 * zoom);
-    else this.targetOffset.set(0, 2.3, this.portrait ? 7.5 : 6);
+    else if (this.preview && this.preview.bottom - this.preview.top > 60) {
+      // Aperçu : on recule jusqu'à ce que le héros (1,9) remplisse la zone demandée, et on le centre dedans.
+      const { top, bottom, centerX } = this.preview;
+      const height = window.innerHeight;
+      const visible = (PREVIEW_HERO_HEIGHT * height) / ((bottom - top) * 0.88);
+      const perPixel = visible / height;
+      const distance = visible / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));
+      lookTarget = PREVIEW_HERO_HEIGHT / 2 - (height / 2 - (top + bottom) / 2) * perPixel;
+      this.targetOffset.set(-(centerX - window.innerWidth / 2) * perPixel, lookTarget + 0.15, distance);
+    } else this.targetOffset.set(0, 2.3, this.portrait ? 7.5 : 6);
 
     const k = 1 - Math.exp(-dt * 5);
     this.offset.lerp(this.targetOffset, k);
-    this.lookY += ((play ? 0.5 : 1.1) - this.lookY) * k;
+    this.lookY += (lookTarget - this.lookY) * k;
 
     this.trauma = Math.max(0, this.trauma - dt * 2.5);
     const amplitude = this.trauma * this.trauma * 0.6;
@@ -136,7 +163,7 @@ export class World {
       this.offset.y + (Math.random() - 0.5) * amplitude,
       z + this.offset.z,
     );
-    this.camera.lookAt(x, this.lookY, z);
+    this.camera.lookAt(x + this.offset.x, this.lookY, z);
     this.sun.position.set(x + 10, 20, z + 8);
     this.sun.target.position.set(x, 0, z);
   }

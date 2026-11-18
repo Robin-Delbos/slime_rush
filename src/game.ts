@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { loadAssets } from './assets';
 import { Sfx } from './audio';
 import type { DevTools } from './dev';
-import { amuletOf } from './amulets';
+import { AMULETS, amuletOf } from './amulets';
 import { CHEST_PRICES, openChests, type ChestPrices } from './chests';
 import { cosmeticColor } from './cosmetics';
 import { Effects } from './effects';
@@ -76,6 +76,10 @@ export class Game {
   private bossPoint = new THREE.Vector3();
   private legendTimer = 0;
   private stepTimer = 0;
+  /** Aperçu du héros en entier (collection) : il pivote doucement pour se montrer sous tous les angles. */
+  private previewing = false;
+  /** Héros regardé dans l'aperçu sans être acheté : il remplace un moment le héros choisi à l'écran. */
+  private tryHero: string | null = null;
   /** Source de hasard des coffres (remplaçable par les tests de bout en bout). */
   private chestRandom: () => number = Math.random;
   /** Outils du mode dev (version de développement uniquement). */
@@ -86,7 +90,7 @@ export class Game {
     this.input = new Input(canvas, document.getElementById('joystick')!, document.getElementById('knob')!);
     this.effects = new Effects(this.world.scene, this.world.camera, document.getElementById('floaters')!);
     this.sfx.muted = this.save.muted;
-    this.music.setMuted(this.save.muted);
+    this.music.setMuted(this.musicSilenced());
     this.sfx.onUnlock = () => this.music.resume();
     this.music.setTrack('menu');
     this.world.setAtmosphere(this.save.difficulty);
@@ -163,14 +167,31 @@ export class Game {
       onToggleSound: () => {
         this.save.muted = !this.save.muted;
         this.sfx.muted = this.save.muted;
-        this.music.setMuted(this.save.muted);
+        this.music.setMuted(this.musicSilenced());
+        this.sfx.unlock();
+        this.sfx.play('click');
+        this.commit();
+      },
+      onTryHero: (id) => {
+        this.tryHero = id;
+        this.applyCharacter();
+      },
+      onPreview: (view) => {
+        this.world.setPreview(view);
+        this.previewing = view !== null;
+      },
+      onToggleMusic: () => {
+        // Tout le son est coupé : le bouton de la musique est grisé, il n'y a rien à régler.
+        if (this.save.muted) return;
+        this.save.music = !this.save.music;
+        this.music.setMuted(this.musicSilenced());
         this.sfx.unlock();
         this.sfx.play('click');
         this.commit();
       },
       onImportSave: (data) => {
         // Le réglage du son appartient à cet appareil : il n'est pas remplacé par celui de la sauvegarde importée.
-        Object.assign(this.save, data, { muted: this.save.muted });
+        Object.assign(this.save, data, { muted: this.save.muted, music: this.save.music });
         this.sfx.play('buy');
         this.world.setAtmosphere(this.save.difficulty);
         this.commit();
@@ -329,6 +350,11 @@ export class Game {
     this.ui.setReady();
   }
 
+  /** La musique se tait si tout le son est coupé, ou si elle a été coupée seule. */
+  private musicSilenced(): boolean {
+    return this.save.muted || !this.save.music;
+  }
+
   /** Enregistre la sauvegarde et rafraîchit les écrans qui l'affichent. */
   private commit(): void {
     persistSave(this.storage, this.save);
@@ -339,7 +365,7 @@ export class Game {
   private applyCharacter(): void {
     const run = this.run;
     if (!run) return;
-    const next = this.views.get(this.save.selected) ?? null;
+    const next = this.views.get(this.tryHero ?? this.save.selected) ?? null;
     if (next === this.view) return;
     if (this.view) run.player.group.remove(this.view.object);
     if (next) run.player.group.add(next.object);
@@ -432,6 +458,7 @@ export class Game {
     }
 
     const { player } = run;
+    if (this.state === 'menu') player.group.rotation.y = this.previewing ? Math.sin(ms / 1000 * 1.2) * 0.8 : 0;
     let heroState: HeroState = 'idle';
     if (this.state === 'dying' || this.state === 'gameover') heroState = 'dead';
     else if (this.state === 'playing' && player.moving) heroState = 'run';
@@ -579,12 +606,23 @@ export class Game {
         style: { ...this.save.style },
         cosmetics: JSON.parse(JSON.stringify(this.save.cosmetics)) as Record<string, string[]>,
         savedWeapons: [...this.save.weapons],
-        audio: { state: this.sfx.audio?.ctx.state ?? 'aucun', track: this.music.current, wanted: this.music.wanted },
+        audio: { state: this.sfx.audio?.ctx.state ?? 'aucun', track: this.music.current, wanted: this.music.wanted, silenced: this.musicSilenced() },
         weapon: this.save.weapon,
         weapons: this.run?.weapons.owned ?? [],
         difficulty: this.save.difficulty,
         hasModel: this.view !== null,
+        previewing: this.previewing,
+        trying: this.tryHero,
       }),
+      /** Rectangle écran (px) du héros debout : de sa tête à ses pieds, pour vérifier qu'il se voit en entier. */
+      heroBox: () => {
+        const player = this.run?.player;
+        if (!player) return null;
+        const head = new THREE.Vector3(player.x, 1.9, player.z).project(this.world.camera);
+        const feet = new THREE.Vector3(player.x, 0, player.z).project(this.world.camera);
+        const toY = (v: THREE.Vector3) => ((1 - v.y) / 2) * window.innerHeight;
+        return { top: toY(head), bottom: toY(feet), x: ((head.x + 1) / 2) * window.innerWidth };
+      },
       /** Tue le héros. La régénération est coupée : sinon un héros qui en a une serait soigné avant le contrôle de mort et survivrait. */
       kill: () => {
         const player = this.run?.player;
@@ -647,6 +685,29 @@ export class Game {
       },
       fillSpecial: () => {
         if (this.run) this.run.charge = 1;
+      },
+      /** Donne `n` exemplaires de chaque amulette. */
+      giveAmulets: (n: number) => {
+        for (const a of AMULETS) this.save.amulets[a.id] = n;
+        this.commit();
+      },
+      /** Débloque toutes les armes et note le niveau 100 pour chacune (badges du menu). */
+      unlockAll: () => {
+        for (const w of WEAPONS) {
+          if (!this.save.weapons.includes(w.id)) this.save.weapons.push(w.id);
+          addLegend(this.save, w.id, this.save.difficulty);
+        }
+        this.commit();
+      },
+      /** Gonfle les chiffres du HUD (PV, niveau, ennemis tués, or) pour vérifier que rien ne déborde. */
+      hudStress: () => {
+        const run = this.run;
+        if (!run) return;
+        run.player.stats.maxHp = 9999;
+        run.player.hp = 9999;
+        run.level = 100;
+        run.kills = 99999;
+        run.gold = 99999;
       },
       addGold: (amount: number) => {
         this.save.gold += amount;
