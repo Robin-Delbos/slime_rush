@@ -112,6 +112,8 @@ Dans la **🎁 Boutique** (onglet *Coffres*), on peut ouvrir un coffre pour **10
 
 Pendant l'ouverture en plein écran, la **musique des coffres** (Sol majeur, entraînante : basse « oom-pah », accords à contretemps, charleston) remplace celle du menu, puis le menu la retrouve à la fermeture.
 
+**Probabilités** : dans l'onglet *Coffres* de la boutique, une petite icône « i » (à côté du texte d'accroche) affiche le tableau « Probabilités du contenu » (les stores l'exigent pour un contenu aléatoire). Le tableau ne nomme pas l'arme ni les héros exclusifs : on les découvre dans le coffre. Le tableau est calculé à partir des mêmes constantes que le tirage (`CHEST_ODDS`, `COIN_TIERS`) : ce qui est annoncé est toujours ce qui se passe, et un test le vérifie sur des dizaines de milliers de tirages.
+
 **Raretés** : la rareté de la carte décide seule du son, du flash et des confettis (deux contenus de même rareté ont les mêmes). *Commune* : pièces de moins de 1 000. *Rare* : amulettes, apparences, pièces de 1 000 à moins de 3 000. *Légendaire* : héros exclusifs, pièces de 3 000 et plus (jackpot). *Mythique* : l'arme exclusive, la plus rare (~1 %), avec sa fanfare, ses couleurs irisées et le plus de confettis.
 
 **🎒 Collection** (au menu) : trois onglets. *Héros* : on choisit (ou on achète) son personnage. *Apparences* : couleurs des projectiles, traînées et poussière trouvées dans les coffres. *Amulettes* : on équipe l'amulette de la prochaine partie (et son niveau, selon le nombre d'exemplaires). Amulettes : Œil de sage (XP), Cœur de pierre (PV), Bourse sans fond (pièces), Plume de vent (vitesse), Croc de loup (dégâts), Pierre tourbillon (portée de ramassage).
@@ -197,7 +199,8 @@ Réglage à faire une seule fois sur GitHub : *Settings → Pages → Source : G
 | `src/pickups.ts` | Gemmes d'XP et pièces |
 | `src/upgrades.ts` | Cartes de montée de niveau : bonus passifs et niveaux d'armes |
 | `src/meta.ts` | Sauvegarde, boutique, armes à débloquer, apparences, difficultés |
-| `src/chests.ts` | Contenu des coffres : prix, probabilités, tirage et rangement dans la sauvegarde |
+| `src/chests.ts` | Contenu des coffres : prix, probabilités (et tableau affiché au joueur), tirage et rangement dans la sauvegarde |
+| `src/credits.ts` | Ressources tierces et leurs licences, affichées à l'écran « Crédits et licences » |
 | `src/amulets.ts` | Amulettes (effet pour une partie) |
 | `src/cosmetics.ts` | Apparences à collectionner : projectiles, traînées, poussière |
 | `src/assets.ts` | Chargement des modèles 3D |
@@ -210,6 +213,8 @@ Réglage à faire une seule fois sur GitHub : *Settings → Pages → Source : G
 | `src/ui.ts` | Interface HTML |
 | `src/rng.ts` | Aléatoire de la simulation, remplaçable par une graine fixe |
 | `public/models/` | Modèles 3D (format GLB) |
+| `public/confidentialite.html` | Politique de confidentialité (page autonome, liée depuis l'écran des crédits) : à mettre à jour avant d'ajouter publicité, achats ou toute collecte de données |
+| `LICENSE` | Licence du dépôt (tous droits réservés, ressources tierces sous leur propre licence) |
 
 ### Ajouter du contenu
 
@@ -229,6 +234,8 @@ Three.js ne sait pas afficher en un seul appel des centaines de modèles animés
 Si un modèle ne se charge pas, il est remplacé par une forme simple et le jeu reste jouable.
 
 ## Crédits
+
+Le jeu les affiche aussi à l'écran **Crédits et licences** (lien sous les boutons du menu, avec la [politique de confidentialité](public/confidentialite.html)), car les licences CC BY 4.0 (Twemoji) et MIT (three.js) exigent que la mention soit visible dans le jeu publié, pas seulement dans ce dépôt. Toute nouvelle ressource tierce (modèle, police, bibliothèque...) s'ajoute à la fois ici et dans `src/credits.ts`.
 
 Modèles 3D de [Quaternius](https://quaternius.com/), sous licence [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (domaine public), récupérés sur [poly.pizza](https://poly.pizza/u/Quaternius) :
 

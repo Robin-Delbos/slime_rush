@@ -3,10 +3,13 @@ import { AMULETS, AMULET_MAX_LEVEL, amuletOf, applyAmulet } from '../src/amulets
 import {
   CHEST_BUNDLE,
   CHEST_ODDS,
+  CHEST_ODDS_NOTE,
   CHEST_PRICE,
   COIN_TIERS,
   applyReward,
+  chestOddsTable,
   chestPrice,
+  formatChance,
   missingChestCharacters,
   missingChestWeapons,
   missingCosmetics,
@@ -17,6 +20,7 @@ import {
 } from '../src/chests';
 import { CATEGORIES, COSMETICS, DEFAULT_COSMETIC, cosmeticColor, cosmeticOf, defaultOwned, defaultStyle, lootableCosmetics } from '../src/cosmetics';
 import {
+  CHARACTERS,
   chooseWeapon,
   consumeAmulet,
   defaultSave,
@@ -31,6 +35,7 @@ import {
 } from '../src/meta';
 import { baseStats } from '../src/player';
 import { random, resetRandom, seedRandom } from '../src/rng';
+import { WEAPONS } from '../src/weaponData';
 
 beforeEach(() => seedRandom(77));
 afterEach(() => resetRandom());
@@ -548,5 +553,59 @@ describe('Amulettes et apparences dans la sauvegarde', () => {
     expect(save.amulets).toEqual({});
     expect(save.cosmetics).toEqual(defaultOwned());
     expect(save.style).toEqual(defaultStyle());
+  });
+});
+
+describe('Probabilités affichées', () => {
+  const table = chestOddsTable();
+  const main = table.filter((r) => !r.sub);
+  const coinRows = table.filter((r) => r.sub);
+
+  it('annonce les mêmes chances que le tirage, et leur somme fait 100 %', () => {
+    expect(main.reduce((sum, r) => sum + r.chance, 0)).toBeCloseTo(1, 10);
+    const chance = (start: string) => main.find((r) => r.label.startsWith(start))!.chance;
+    expect(chance('Arme')).toBeCloseTo(CHEST_ODDS.weapon);
+    expect(chance('Héros')).toBeCloseTo(CHEST_ODDS.character);
+    expect(chance('Amulette')).toBeCloseTo(CHEST_ODDS.amulet);
+    expect(chance('Apparence')).toBeCloseTo(CHEST_ODDS.cosmetic);
+    expect(chance('Pièces')).toBeCloseTo(0.24);
+  });
+
+  it('détaille les pièces par tranche, pour un total égal à la ligne « Pièces »', () => {
+    expect(coinRows.length).toBe(COIN_TIERS.length);
+    expect(coinRows.reduce((sum, r) => sum + r.chance, 0)).toBeCloseTo(main.find((r) => r.label === 'Pièces')!.chance, 10);
+    expect(coinRows[0].label).toBe('200 à 400 pièces');
+    expect(coinRows[0].chance).toBeGreaterThan(coinRows[coinRows.length - 1].chance);
+  });
+
+  it('ne révèle pas le nom de l’arme ni des héros exclusifs : le joueur les découvre dans le coffre', () => {
+    expect(main[0].label).toBe('Arme exclusive');
+    expect(main[1].label).toBe('Héros exclusif');
+    const text = table.map((row) => row.label).join(' ');
+    for (const name of [...WEAPONS.filter((w) => w.chest), ...CHARACTERS.filter((c) => c.chest)].map((x) => x.name)) {
+      expect(text).not.toContain(name);
+    }
+  });
+
+  it('correspond à ce que donnent vraiment les coffres sur un grand nombre de tirages', () => {
+    const n = 60000;
+    const counts: Record<string, number> = { weapon: 0, character: 0, amulet: 0, cosmetic: 0, coins: 0 };
+    for (let i = 0; i < n; i++) counts[rollChest(defaultSave(), random).type]++;
+    const expected: Record<string, number> = {
+      weapon: main[0].chance,
+      character: main[1].chance,
+      amulet: main[2].chance,
+      cosmetic: main[3].chance,
+      coins: main[4].chance,
+    };
+    for (const type of Object.keys(counts)) expect(Math.abs(counts[type] / n - expected[type]), type).toBeLessThan(0.01);
+  });
+
+  it('écrit les pourcentages à la française, avec au plus deux décimales', () => {
+    expect(formatChance(0.38)).toBe('38 %');
+    expect(formatChance(0.072)).toBe('7,2 %');
+    expect(formatChance(0.0005)).toBe('0,05 %');
+    expect(formatChance(0.01)).toBe('1 %');
+    expect(CHEST_ODDS_NOTE).toContain('déjà obtenu');
   });
 });

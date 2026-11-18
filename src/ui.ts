@@ -1,10 +1,11 @@
 import { CHARACTERS, DIFFICULTIES, SHOP_ITEMS, exportSave, hasLegend, importSave, shopCost, type SaveData } from './meta';
 import { AMULETS, AMULET_MAX_LEVEL, amuletOf } from './amulets';
 import { countUp } from './anim';
-import { CHEST_BUNDLE, rewardView, type ChestPrices, type ChestReward, type ChestTier } from './chests';
+import { CHEST_BUNDLE, CHEST_ODDS_NOTE, chestOddsTable, formatChance, rewardView, type ChestPrices, type ChestReward, type ChestTier } from './chests';
 import { REVEAL_TIMING, RevealFlow } from './reveal';
 import { CATEGORIES, CATEGORY_HELP, CATEGORY_LABELS, CATEGORY_WEAPONS, COSMETICS, type CosmeticCategory } from './cosmetics';
 import { WEAPON_PREFIX } from './upgrades';
+import { CREDITS, THREE_LICENSE } from './credits';
 import { VERSION_LABEL } from './version';
 import { WEAPONS } from './weaponData';
 import type { Upgrade } from './upgrades';
@@ -55,6 +56,16 @@ function iconElement(className: string, icon: string): HTMLSpanElement {
   if (icon.startsWith('<svg')) node.innerHTML = icon;
   else node.textContent = icon;
   return node;
+}
+
+/** Lien externe : s'ouvre dans un nouvel onglet sans donner accès à la page du jeu. */
+function link(text: string, href: string): HTMLAnchorElement {
+  const a = document.createElement('a');
+  a.textContent = text;
+  a.href = href;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  return a;
 }
 
 /** Crée un élément avec une classe et un texte. */
@@ -145,6 +156,7 @@ export class Ui {
   private gameOver = el('overlay-gameover');
   private playButton = el<HTMLButtonElement>('btn-start');
   private saveScreen = el('overlay-save');
+  private credits = el('overlay-credits');
   private collection = el('overlay-collection');
   private reveal = el('overlay-reveal');
   private revealStage = el('reveal-stage');
@@ -185,6 +197,8 @@ export class Ui {
       this.updateCover();
     });
     this.bindSaveScreen();
+    this.bindCredits();
+    this.fillChestOdds();
     this.bindChestScreens();
     el('version').textContent = VERSION_LABEL;
     // La zone d'aperçu change avec la taille de l'écran (rotation du téléphone) : on recadre le héros.
@@ -192,6 +206,52 @@ export class Ui {
     // Si l'écran des héros défile (écran très court), la fenêtre d'aperçu bouge : le héros la suit.
     this.collection.addEventListener('scroll', () => this.syncPreview());
     this.refresh();
+  }
+
+  /** Écran « Crédits et licences » : les mentions que les licences des ressources tierces exigent de montrer dans le jeu. */
+  private bindCredits(): void {
+    const { handlers } = this;
+    el('credits-intro').textContent = `Slime Rush ${VERSION_LABEL}. Le jeu utilise les ressources libres suivantes, avec leur licence.`;
+    const list = el('credits-list');
+    for (const credit of CREDITS) {
+      const box = make('div', 'save-box credit');
+      box.append(make('span', 'credit-what', credit.what), make('strong', 'credit-name', credit.name), make('span', 'credit-author', credit.author));
+      const license = make('span', 'credit-license', 'Licence : ');
+      license.append(credit.licenseUrl ? link(credit.license, credit.licenseUrl) : document.createTextNode(credit.license));
+      box.append(license);
+      if (credit.sourceUrl) box.append(link(credit.sourceLabel ?? credit.sourceUrl, credit.sourceUrl));
+      list.append(box);
+    }
+    el('credits-three').textContent = THREE_LICENSE;
+
+    el('btn-credits').addEventListener('click', () => {
+      handlers.onNavigate();
+      this.credits.classList.remove('hidden');
+      this.updateCover();
+    });
+    el('btn-credits-back').addEventListener('click', () => {
+      handlers.onNavigate();
+      this.credits.classList.add('hidden');
+      this.updateCover();
+    });
+  }
+
+  /** Probabilités du contenu des coffres, visibles avant tout achat (« Probabilités du contenu » dans l'onglet Coffres). */
+  private fillChestOdds(): void {
+    const list = el('chest-odds-list');
+    for (const row of chestOddsTable()) {
+      const line = make('div', `odds-row${row.sub ? ' sub' : ''}`);
+      line.append(make('span', 'odds-label', row.label), make('span', 'odds-chance', formatChance(row.chance)));
+      list.append(line);
+    }
+    el('chest-odds-note').textContent = CHEST_ODDS_NOTE;
+    // Petite icône « i » à côté du texte d'accroche : elle montre ou cache le tableau.
+    const toggle = el('btn-chest-odds');
+    toggle.addEventListener('click', () => {
+      this.handlers.onNavigate();
+      const open = el('chest-odds').classList.toggle('hidden') === false;
+      toggle.setAttribute('aria-expanded', String(open));
+    });
   }
 
   /** Écran d'export / import de la sauvegarde. */
@@ -517,7 +577,7 @@ private refreshChests(): void {
 
   /** Cache le menu principal tant qu'un écran (boutique, collection, sauvegarde) est ouvert par-dessus : rien ne transparaît. */
   private updateCover(): void {
-    const covered = [this.shop, this.saveScreen, this.collection].some((screen) => !screen.classList.contains('hidden'));
+    const covered = [this.shop, this.saveScreen, this.credits, this.collection].some((screen) => !screen.classList.contains('hidden'));
     this.start.classList.toggle('covered', covered);
     this.syncPreview();
   }
@@ -572,6 +632,7 @@ private refreshChests(): void {
       handlers.onNavigate();
       this.shop.classList.add('hidden');
       this.saveScreen.classList.add('hidden');
+      this.credits.classList.add('hidden');
       this.collection.classList.add('hidden');
       screen.classList.remove('hidden');
       this.updateCover();
@@ -886,13 +947,13 @@ private clearChestTimers(): void {
   showMenu(): void {
     this.lowHp.classList.remove('active');
     this.refresh();
-    for (const node of [this.hud, this.shop, this.saveScreen, this.collection, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
+    for (const node of [this.hud, this.shop, this.saveScreen, this.credits, this.collection, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
     this.start.classList.remove('hidden');
     this.updateCover();
   }
 
   showGame(): void {
-    for (const node of [this.start, this.shop, this.saveScreen, this.collection, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
+    for (const node of [this.start, this.shop, this.saveScreen, this.credits, this.collection, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
     this.hud.classList.remove('hidden');
   }
 

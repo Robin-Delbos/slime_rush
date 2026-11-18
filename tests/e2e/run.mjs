@@ -64,7 +64,7 @@ class Page {
   }
 
   async eval(expression) {
-    const result = await this.send('Runtime.evaluate', { expression, returnByValue: true });
+    const result = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
     if (result.exceptionDetails) throw new Error(`Évaluation échouée : ${expression}\n${result.exceptionDetails.exception?.description}`);
     return result.result.value;
   }
@@ -198,6 +198,21 @@ async function scenario(page, url, viewport) {
   check(goldOf(await page.text('#menu-gold')) === 0, 'une sauvegarde neuve commence à 0 pièce');
   check(await page.eval(`!!document.querySelector('#btn-shop') && !!document.querySelector('#btn-collection') && !document.querySelector('#btn-chests')`), 'le menu ne garde que Boutique et Collection (les coffres sont dans la boutique)');
   check((await page.text('#weapon-desc')).startsWith('Carabine'), 'la description de l’arme choisie s’affiche sous les armes');
+  // Crédits et licences : exigés par les licences CC BY (Twemoji) et MIT (three.js), visibles dans le jeu publié.
+  check(await page.visible('#btn-credits'), 'le menu propose « Crédits et licences »');
+  await page.click('#btn-credits');
+  check((await page.visible('#overlay-credits')) && (await page.eval(`document.querySelector('#overlay-start').classList.contains('covered')`)), 'l’écran des crédits s’ouvre par-dessus le menu, qui est masqué');
+  const credits = await page.eval(`document.querySelector('#overlay-credits').textContent`);
+  check(['Quaternius', 'CC0', 'Twemoji', 'CC BY 4.0', 'three.js', 'MIT', 'Créés pour le jeu'].every((word) => credits.includes(word)), 'les crédits citent les modèles, les icônes, le moteur 3D et leurs licences');
+  check((await page.eval(`document.querySelector('#credits-three').textContent`)).includes('Permission is hereby granted'), 'le texte complet de la licence de three.js est dans le jeu');
+  check(await page.eval(`[...document.querySelectorAll('#overlay-credits a')].length >= 4 && [...document.querySelectorAll('#overlay-credits a')].every((a) => a.target === '_blank' && a.rel.includes('noopener'))`), 'les liens des crédits s’ouvrent dans un nouvel onglet, sans accès à la page du jeu');
+  const privacy = await page.eval(`(() => { const a = document.querySelector('#credits-privacy'); return a ? a.getAttribute('href') : null; })()`);
+  check(privacy === './confidentialite.html', 'les crédits donnent accès à la politique de confidentialité');
+  check((await page.eval(`fetch(document.querySelector('#credits-privacy').href).then((r) => r.status + ' ' + r.headers.get('content-type'))`)).startsWith('200 text/html'), 'la page de confidentialité est bien servie avec le jeu');
+  check(!(await page.eval(`document.querySelector('#overlay-credits').textContent.includes('Robin') || [...document.querySelectorAll('#overlay-credits a')].some((a) => a.href.includes('Robin-Delbos'))`)), 'les crédits ne donnent ni nom de personne ni lien vers le dépôt');
+  await shot('0-credits');
+  await page.click('#btn-credits-back');
+  check(!(await page.visible('#overlay-credits')) && !(await page.eval(`document.querySelector('#overlay-start').classList.contains('covered')`)), 'les crédits se referment sur le menu');
   await page.click('#btn-collection');
   check(await page.visible('#overlay-collection') && (await page.visible('#panel-heroes')) && !(await page.visible('#panel-styles')), 'la collection s’ouvre sur l’onglet des héros');
   await page.click('.char-card[data-id="anne"]');
@@ -223,6 +238,18 @@ async function scenario(page, url, viewport) {
 
   await page.click('#tab-chests');
   check((await page.visible('#panel-chests')) && !(await page.visible('#panel-upgrades')), 'l’onglet Coffres remplace les améliorations');
+  // Probabilités annoncées avant tout achat (exigence des stores pour les coffres à contenu aléatoire).
+  check((await page.visible('#btn-chest-odds')) && !(await page.visible('#chest-odds')), 'une petite icône « i » est proposée, et les probabilités des coffres sont cachées par défaut');
+  const infoSize = await page.eval(`(() => { const r = document.querySelector('#btn-chest-odds').getBoundingClientRect(); return Math.round(r.width) + 'x' + Math.round(r.height); })()`);
+  check(infoSize === '20x20', `l'icône reste discrète (${infoSize})`);
+  await page.click('#btn-chest-odds');
+  check((await page.visible('#chest-odds')) && (await page.eval(`document.querySelector('#btn-chest-odds').getAttribute('aria-expanded')`)) === 'true', 'l’icône affiche les probabilités');
+  const odds = await page.text('#chest-odds-list');
+  check(['Arme exclusive', 'Héros exclusif', '38 %', '32 %', '24 %', '5 %', '1 %'].every((word) => odds.includes(word)), `les probabilités du contenu s'affichent (${odds.replace(/s+/g, ' ').slice(0, 80)}…)`);
+  check(!['Mines', 'Pirate', 'Lis'].some((name) => odds.includes(name)), 'les probabilités ne révèlent pas le nom de l’arme ni des héros exclusifs');
+  check((await page.text('#chest-odds-note')).includes('déjà obtenu'), 'la précision sur les contenus déjà obtenus est donnée');
+  await page.click('#btn-chest-odds');
+  check(!(await page.visible('#chest-odds')), 'l’icône cache de nouveau les probabilités');
   await page.click('#tab-upgrades');
   check(await page.visible('#panel-upgrades'), 'on revient aux améliorations');
   // Le titre et les onglets restent à la même hauteur d'un onglet à l'autre, quel que soit le contenu.
@@ -1037,7 +1064,7 @@ async function platformScenario(page, url, platform) {
 }
 
 /** Les cadres (cartes, boutons, pastilles, barres...) dont le texte ne doit jamais dépasser. */
-const TEXT_FRAMES = '.weapon-card, .diff-btn, .char-card, .side-btn, .btn, .tab, .pill, .shop-row, .swatch, .amulet-row, .card, .reveal-mini, .reveal-card, .bar, .collection-section, .save-box, #banner, .boss-bar, .stats';
+const TEXT_FRAMES = '.odds, .info-btn, .credit, .menu-foot, .weapon-card, .diff-btn, .char-card, .side-btn, .btn, .tab, .pill, .shop-row, .swatch, .amulet-row, .card, .reveal-mini, .reveal-card, .bar, .collection-section, .save-box, #banner, .boss-bar, .stats';
 
 /** Liste les textes qui sortent de leur cadre (liste vide : tout tient). */
 function textOverflows(page) {
@@ -1045,7 +1072,9 @@ function textOverflows(page) {
     const bad = [];
     const visible = (el) => {
       const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' && !el.closest('.hidden');
+      // Le contenu d'un bloc replié (<details> fermé, hors de son titre) n'est pas affiché.
+      const folded = el.closest('details') && !el.closest('details').open && !el.closest('summary');
+      return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' && !el.closest('.hidden') && !folded;
     };
     const name = (el) => (el.id ? '#' + el.id : el.tagName.toLowerCase() + '.' + String(el.className).trim().split(/\\s+/).join('.'));
     for (const frame of document.querySelectorAll(${JSON.stringify(TEXT_FRAMES)})) {
@@ -1180,11 +1209,21 @@ async function textScenario(page, url, size) {
   await page.click('.diff-btn[data-id="normal"]');
 
   // --- Boutique et collection ---
+  await checkTexts(page, 'menu avec le lien des crédits');
+  await page.click('#btn-credits');
+  await page.click('#overlay-credits details summary');
+  await checkTexts(page, 'crédits et licences');
+  await shot('1b-credits');
+  await page.click('#btn-credits-back');
   await page.click('#btn-shop');
   await sleep(200);
   await checkTexts(page, 'boutique (améliorations)');
   await page.click('#tab-chests');
   await checkTexts(page, 'boutique (coffres)');
+  await page.click('#btn-chest-odds');
+  await checkTexts(page, 'boutique (coffres, probabilités affichées)');
+  await shot('2-boutique-probabilites');
+  await page.click('#btn-chest-odds');
   await shot('2-boutique-coffres');
   await page.click('#btn-shop-back');
   await page.click('#btn-collection');

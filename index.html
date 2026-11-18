@@ -118,7 +118,10 @@
               <span class="side-label">Collection</span>
             </button>
           </div>
-          <span id="version" class="version"></span>
+          <div class="menu-foot">
+            <span id="version" class="version"></span>
+            <button id="btn-credits" class="link-btn">Crédits et licences</button>
+          </div>
         </div>
       </div>
 
@@ -135,7 +138,15 @@
         </section>
         <section id="panel-chests" class="tab-panel hidden" role="tabpanel">
           <div id="chest-preview" class="chest-preview" aria-hidden="true"></div>
-          <p class="hint">Amulettes, apparences, pièces… et peut-être un héros ou une arme secrète</p>
+          <p class="hint">
+            Amulettes, apparences, pièces… et peut-être un héros ou une arme secrète
+            <button id="btn-chest-odds" class="info-btn" aria-label="Probabilités du contenu" aria-expanded="false" aria-controls="chest-odds">i</button>
+          </p>
+          <div id="chest-odds" class="odds hidden">
+            <strong class="odds-title">Probabilités du contenu</strong>
+            <div id="chest-odds-list" class="odds-list"></div>
+            <p id="chest-odds-note" class="odds-note"></p>
+          </div>
           <div class="menu-actions">
             <button id="btn-chest-1" class="btn btn-small">🎁 Un coffre · 1000 🪙</button>
             <button id="btn-chest-3" class="btn btn-small btn-alt">🎁 3 coffres · 2500 🪙</button>
@@ -176,6 +187,18 @@
         </div>
         <p id="save-status" class="best" role="status"></p>
         <button id="btn-save-back" class="btn btn-alt">Retour</button>
+      </div>
+
+      <div id="overlay-credits" class="overlay hidden">
+        <h2>Crédits et licences</h2>
+        <p id="credits-intro" class="hint"></p>
+        <div id="credits-list" class="credits-list"></div>
+        <details class="odds credits-license">
+          <summary>Licence de three.js (MIT)</summary>
+          <pre id="credits-three"></pre>
+        </details>
+        <p class="hint"><a id="credits-privacy" href="./confidentialite.html" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a></p>
+        <button id="btn-credits-back" class="btn btn-alt">Retour</button>
       </div>
 
       <div id="overlay-collection" class="overlay hidden" data-tab="heroes">

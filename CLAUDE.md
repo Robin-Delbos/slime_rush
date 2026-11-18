@@ -40,7 +40,9 @@ La modification de ce fichier se commite comme `docs` (sans changer la version),
 - **Séparation** : la simulation (`Run` et les modules `src/*` sans affichage) est testable sous Node ; `Game` (`src/game.ts`) orchestre le rendu, l'interface et les sons.
 - **Aléatoire** : toujours via `src/rng.ts` (graine fixe dans les tests).
 - **Sons** : tout est synthétisé avec WebAudio (`src/audio.ts`, `src/music.ts`), aucun fichier audio. L'audio ne démarre qu'après un geste de l'utilisateur.
-- **Icônes** : ne jamais compter sur les emojis du système (ils changent d'un OS à l'autre). Les emojis du texte sont remplacés par des images Twemoji (`public/emoji/`, liste dans `src/emoji.ts`, test dans `tests/emoji.test.ts`). Un nouvel emoji demande son fichier SVG et son ajout à la liste.
+- **Icônes** : ne jamais compter sur les emojis du système (ils changent d'un OS à l'autre). Les emojis du texte sont remplacés par des images Twemoji (`public/emoji/`, liste dans `src/emoji.ts`, test dans `tests/emoji.test.ts`). Un nouvel emoji demande son fichier SVG et son ajout à la liste. Même un « © » dans un texte est un pictogramme (fichier `a9.svg`).
+- **Ressource tierce** (modèle, icône, police, bibliothèque) : l'ajouter à `CREDITS` (`src/credits.ts`, écran « Crédits et licences ») et au README ; les licences CC BY et MIT exigent une mention dans le jeu publié.
+- **Confidentialité** : `public/confidentialite.html` affirme que le jeu ne collecte rien (ni publicité, ni achat, ni statistique). Avant d'ajouter l'un de ceux-là, la mettre à jour, et mettre à jour `LICENSE` si le choix de licence change. Les crédits ne contiennent ni le nom de l'utilisateur ni le lien du dépôt (décision de l'utilisateur).
 - **Sauvegarde** : `localStorage`, clé `slime-rush.save`. Tout nouveau champ doit être nettoyé dans `sanitizeSave` (`src/meta.ts`) ; un identifiant renommé va dans `RENAMED_CHARACTERS`.
 - **Débogage** : avec `?debug` dans l'URL, `window.__game` expose des raccourcis de test (état, ajout d'or, tuer le héros, etc.), utilisés par les tests e2e.
 - **Mode dev** (`npm run dev` seulement) : retiré de la version publiée.

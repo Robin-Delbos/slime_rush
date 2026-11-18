@@ -117,6 +117,42 @@ export function applyReward(save: SaveData, reward: ChestReward): void {
   }
 }
 
+/** Une ligne du tableau des probabilités affiché avant l'achat d'un coffre. */
+export interface OddsRow {
+  label: string;
+  /** Chance par coffre, de 0 à 1. */
+  chance: number;
+  /** Ligne de détail (tranche de pièces), indentée sous « Pièces ». */
+  sub?: boolean;
+}
+
+/** « 12 % », « 7,2 % », « 0,05 % » : au plus deux décimales, virgule française. */
+export function formatChance(chance: number): string {
+  return `${String(Math.round(chance * 10000) / 100).replace('.', ',')} %`;
+}
+
+/**
+ * Probabilités affichées au joueur, calculées à partir des mêmes constantes que le tirage (`CHEST_ODDS`, `COIN_TIERS`) :
+ * ce qui est annoncé est donc toujours ce qui se passe. Les mêmes pour un coffre seul ou pour un lot de trois.
+ */
+export function chestOddsTable(): OddsRow[] {
+  const coins = 1 - CHEST_ODDS.weapon - CHEST_ODDS.amulet - CHEST_ODDS.cosmetic - CHEST_ODDS.character;
+  const weight = COIN_TIERS.reduce((sum, t) => sum + t.weight, 0);
+  return [
+    // Pas de nom : le joueur découvre l'arme et le héros en ouvrant le coffre.
+    { label: 'Arme exclusive', chance: CHEST_ODDS.weapon },
+    { label: 'Héros exclusif', chance: CHEST_ODDS.character },
+    { label: 'Amulette', chance: CHEST_ODDS.amulet },
+    { label: 'Apparence', chance: CHEST_ODDS.cosmetic },
+    { label: 'Pièces', chance: coins },
+    ...COIN_TIERS.map((t) => ({ label: `${t.min} à ${t.max} pièces`, chance: (coins * t.weight) / weight, sub: true })),
+  ];
+}
+
+/** Précision affichée sous le tableau : un contenu déjà obtenu ne ressort jamais. */
+export const CHEST_ODDS_NOTE =
+  'Un coffre contient une seule chose. Un contenu déjà obtenu (arme, héros, apparence) ne ressort jamais : le tirage donne alors autre chose (amulette ou pièces). Les chances sont les mêmes pour un coffre seul et pour un lot de trois.';
+
 /** Prix d'une ouverture de `count` coffres (1 ou le lot), ou null si ce n'est pas une offre. */
 export function chestPrice(count: number, prices: ChestPrices = CHEST_PRICES): number | null {
   if (count === 1) return prices.single;

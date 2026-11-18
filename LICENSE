@@ -1,0 +1,29 @@
+Slime Rush
+Copyright (c) 2026 Robin Delbos. Tous droits réservés. / All rights reserved.
+
+Le code source, les textes, les sons, les musiques et les graphismes originaux de ce
+dépôt sont fournis pour consultation. Sans autorisation écrite préalable de l'auteur,
+il est interdit de les copier, modifier, redistribuer, publier (y compris sur une
+boutique d'applications) ou exploiter commercialement, en tout ou en partie.
+
+The source code, texts, sounds, music and original artwork in this repository are
+made available for viewing only. Without the author's prior written permission, you
+may not copy, modify, redistribute, publish (including on an app store) or use them
+commercially, in whole or in part.
+
+Ressources tierces / Third-party material
+-----------------------------------------
+Ce qui n'a pas été créé par l'auteur reste soumis à la licence de son propre créateur,
+et n'est pas couvert par la mention ci-dessus :
+
+  - modèles 3D de Quaternius (public/models) : CC0 1.0, https://creativecommons.org/publicdomain/zero/1.0/
+  - icônes Twemoji (public/emoji) : CC BY 4.0, https://creativecommons.org/licenses/by/4.0/
+  - three.js (dépendance npm) : licence MIT, voir node_modules/three/LICENSE
+
+Le détail figure dans le README (section « Crédits ») et dans l'écran « Crédits et
+licences » du jeu.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE USE OF THE SOFTWARE.
