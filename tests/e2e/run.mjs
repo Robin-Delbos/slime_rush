@@ -190,6 +190,7 @@ async function scenario(page, url, viewport) {
   check((await page.game()).hasModel, 'le héros a un modèle 3D');
   check((await page.eval(`document.querySelectorAll('.char-card').length`)) === 8, 'huit héros sont proposés');
   check((await page.eval(`document.querySelectorAll('.weapon-card').length`)) === 4, 'quatre armes de départ sont proposées');
+  await checkWeaponAlignment(page, 'menu à quatre armes');
   check((await page.eval(`document.querySelectorAll('.diff-btn').length`)) === 4, 'quatre difficultés sont proposées');
   check(await page.eval(`!!document.querySelector('.weapon-card[data-id="rifle"] .weapon-icon svg')`), 'la carabine a une icône dessinée');
   check(await page.eval(`!!document.querySelector('#overlay-start .logo svg')`), 'le menu affiche le logo');
@@ -888,6 +889,7 @@ async function orientationScenario(page, url, device) {
 
   // --- L’arme secrète apparaît au menu et fonctionne en partie ---
   check(await page.eval(`document.querySelectorAll('.weapon-card').length`) === 5, 'l’arme secrète trouvée apparaît au menu (5 armes)');
+  await checkWeaponAlignment(page, 'menu à cinq armes (téléphone)');
   await checkReachable(page, 'menu à cinq armes : tout est atteignable au doigt', ['.weapon-card[data-id="mines"]', '.weapon-card[data-id="rifle"]', '#btn-start']);
   await page.eval('document.querySelector("#overlay-start").scrollTo(0, 0)');
   await shot('11-menu-5-armes');
@@ -1134,6 +1136,15 @@ async function checkWeaponAlignment(page, label) {
       rows.set(key, [...(rows.get(key) ?? []), card]);
     }
     const out = [];
+    // Toutes les armes tiennent sur une seule ligne, dans la zone prévue, et la remplissent (au plus 120 px par tuile).
+    if (rows.size > 1) out.push('les armes sont sur ' + rows.size + ' lignes');
+    const box = document.querySelector('#weapons').getBoundingClientRect();
+    const rects = cards.map((c) => c.getBoundingClientRect());
+    const left = Math.min(...rects.map((r) => r.left));
+    const right = Math.max(...rects.map((r) => r.right));
+    if (left < box.left - 1 || right > box.right + 1) out.push('des armes dépassent de leur zone : ' + Math.round(left) + '-' + Math.round(right) + ' pour ' + Math.round(box.left) + '-' + Math.round(box.right));
+    const expected = Math.min(box.width, cards.length * 120 + (cards.length - 1) * 8);
+    if (right - left < expected - 2) out.push('les armes laissent de la place inutilisée : ' + Math.round(right - left) + ' px sur ' + Math.round(expected));
     for (const [, row] of rows) {
       for (const part of ['.weapon-icon', '.char-name', '.char-status']) {
         const tops = row.map((c) => c.querySelector(part).getBoundingClientRect().top);

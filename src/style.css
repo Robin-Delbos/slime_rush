@@ -521,23 +521,27 @@ h2 {
   flex-wrap: wrap;
 }
 
+/* Toutes les armes tiennent sur une seule ligne, quel qu'en soit le nombre (--count, posé par ui.ts) : chaque tuile prend
+   sa part de la largeur disponible (--w, au plus 120px) et l'icône et les textes grandissent ou rétrécissent avec elle. */
 #weapons {
+  container-type: inline-size;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   justify-content: center;
   width: 100%;
   max-width: 620px;
 }
 
-/* Quatre tuiles par ligne quand la place le permet, trois sur un tout petit écran ; jamais plus étroites que leur texte. */
 #weapons .weapon-card {
-  flex: 0 0 clamp(76px, calc((100% - 24px) / 4), 104px);
-  padding: 8px 4px;
+  --w: min(120px, calc((100cqw - (var(--count, 4) - 1) * 8px) / var(--count, 4)));
+  --icon: clamp(24px, calc(var(--w) * 0.42), 48px);
+  flex: 0 0 var(--w);
+  padding: 8px clamp(2px, calc(var(--w) * 0.05), 5px);
   /* Trois lignes de hauteur fixe : l'icône, le nom (jusqu'à deux lignes), puis « Choisir » / « Choisie » / le prix.
      Ainsi tout est aligné d'une arme à l'autre, que le nom tienne sur une ligne ou deux. */
   display: grid;
-  grid-template-rows: 40px 2.4em auto;
+  grid-template-rows: calc(var(--icon) + 4px) 2.4em auto;
   justify-items: center;
   gap: 3px;
 }
@@ -545,21 +549,26 @@ h2 {
 #weapons .weapon-icon {
   display: grid;
   place-items: center;
-  height: 40px;
+  height: calc(var(--icon) + 4px);
 }
 
 #weapons .weapon-icon svg {
+  width: var(--icon);
+  height: var(--icon);
   margin: 0;
 }
 
 #weapons .char-name {
   align-self: start;
   text-align: center;
+  font-size: clamp(8.5px, calc((var(--w) - 14px) / 5), 14px);
 }
 
 #weapons .char-status {
   align-self: end;
   margin-top: 0;
+  font-size: clamp(8.5px, calc((var(--w) - 14px) / 4.6), 13px);
+  white-space: nowrap;
 }
 
 /* Héros : une grille qui passe à la ligne selon la largeur de l'écran. */
@@ -632,7 +641,6 @@ h2 {
 }
 
 #weapons .char-name {
-  font-size: clamp(12px, 3.6vw, 14px);
   line-height: 1.15;
   overflow-wrap: anywhere;
   hyphens: auto;
@@ -1406,6 +1414,16 @@ h2 {
     0 0 10px rgba(255, 210, 80, 0.9);
   font-size: 14px;
   line-height: 1;
+}
+
+/* Sur une tuile d'arme étroite, le badge rétrécit avec elle pour ne pas recouvrir l'icône. */
+#weapons .legend-badge {
+  top: -8px;
+  right: -7px;
+  width: clamp(16px, calc(var(--w) * 0.32), 24px);
+  height: clamp(16px, calc(var(--w) * 0.32), 24px);
+  border-width: 1.5px;
+  font-size: clamp(9px, calc(var(--w) * 0.19), 14px);
 }
 
 #legend {

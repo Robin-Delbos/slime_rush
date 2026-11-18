@@ -448,6 +448,8 @@ export class Ui {
       card.addEventListener('click', () => this.handlers.onSelectWeapon(w.id));
       weapons.append(card);
     }
+    // Le nombre d'armes règle la taille des tuiles : elles restent toutes sur une ligne (voir `#weapons` dans style.css).
+    weapons.style.setProperty('--count', String(Math.max(1, weapons.children.length)));
 
     const chosen = WEAPONS.find((w) => w.id === save.weapon) ?? WEAPONS[0];
     el('weapon-desc').textContent = `${chosen.name} : ${chosen.desc}`;
