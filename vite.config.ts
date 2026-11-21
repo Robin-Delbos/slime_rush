@@ -16,6 +16,13 @@ export default defineConfig({
   },
   plugins: [
     {
+      // Le jeu en cours compare sa version à celle-ci pour proposer « Actualiser » quand une nouvelle est publiée (src/update.ts).
+      name: 'emit-version-file',
+      generateBundle() {
+        this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ version }) });
+      },
+    },
+    {
       // La version n'est lue qu'au démarrage du serveur : sans cela, augmenter la version pendant que
       // `npm run dev` tourne laisserait l'ancien numéro affiché jusqu'au prochain redémarrage à la main.
       // Quand package.json change, le serveur redémarre donc tout seul et la page se recharge.

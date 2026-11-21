@@ -45,14 +45,28 @@ Si la page ne s'ouvre pas, le pare-feu du PC bloque probablement les connexions 
 | Action | PC | Mobile |
 |---|---|---|
 | Se déplacer | `ZQSD` ou flèches, ou clic maintenu puis glisser | Poser le doigt n'importe où et glisser (joystick flottant) |
-| Attaque spéciale | Clic bref sur la zone à frapper, ou `Espace` (vise l'ennemi le plus proche) | Appui bref sur la zone à frapper |
+| Attaque spéciale | Clic bref sur la zone à frapper, ou `Espace` (vise l'ennemi le plus proche) | Appui bref sur la zone à frapper, **avec un deuxième doigt** si le premier déplace déjà le héros (jeu à deux mains) |
 | Pause | `Échap` ou `P`, ou bouton ⏸ | Bouton ⏸ |
 
 Les armes attaquent toutes seules. À chaque niveau, on choisit une carte en cliquant ou en touchant : niveau suivant de votre arme, ou bonus passif. Chaque passage de niveau rend aussi 10 % des PV max.
 
+**Jeu à deux mains (mobile)** : le premier doigt posé est le joystick ; tant qu'il reste posé, tout autre doigt ne déplace rien, mais un appui bref de sa part (moins de 250 ms, presque immobile) déclenche l'attaque spéciale à l'endroit touché. Si le premier doigt se lève, le héros s'arrête et un autre doigt ne reprend pas le joystick : il faut reposer un doigt. Un pouce posé trop longtemps, ou qui glisse, ne frappe pas. Le suivi est dans `src/input.ts` (`Input`).
+
 **Attaque spéciale** : la jauge en bas à droite se remplit en tuant des ennemis (30 slimes, ou moins avec de gros ennemis). Quand elle brille, un appui bref sur le terrain déclenche une explosion de zone à cet endroit. Les ennemis tués par l'explosion ne rechargent pas la jauge.
 
 **Pause** : le menu de pause permet de reprendre ou de quitter la partie, et de couper la **musique** seule ou **tout le son** (réglages conservés). Quand tout le son est coupé, le bouton de la musique est grisé (comme au menu) : on ne peut la remettre qu'avec le son. L'écran de pause floute aussi le niveau et les PV. Quitter affiche le bilan et verse l'or gagné. La partie se met aussi en pause toute seule quand on change d'onglet ou qu'on verrouille le téléphone.
+
+**Plein écran et horizontal (mobile)** : sur téléphone et tablette, un bouton (quatre coins, à côté du son au menu, et « Plein écran » dans le menu pause) masque les barres du navigateur, à la verticale comme à l'horizontale. Sur **Android**, il verrouille aussi l'écran à l'horizontal tant que le plein écran dure (le navigateur n'accepte le verrouillage que dans ce cas) ; sans plein écran, le jeu reste jouable dans les deux sens. Sur **iPhone**, Apple interdit le plein écran et le verrouillage : le bouton explique d'ajouter le jeu à l'écran d'accueil (le manifeste `public/manifest.webmanifest` le lance alors en plein écran, sans barre), et un écran « Tournez votre téléphone » s'affiche à la verticale et met la partie en pause (« Jouer quand même à la verticale » le ferme, pour qui a verrouillé la rotation dans iOS). Un PC n'a pas de bouton (`F11` suffit).
+
+**Installer le jeu comme une application** (mobile) : le lien « Installer l'application » du menu (sous les boutons, à côté des crédits) n'apparaît que sur téléphone et tablette, tant que le jeu n'est pas installé. Sur **Android** (Chrome), il ouvre la fenêtre d'installation du navigateur : c'est une vraie application (WebAPK, icône dédiée, sans barre), pas un simple raccourci. Chrome ne la propose que si le jeu a un manifeste, des icônes PNG 192 et 512 px et un service worker (`public/sw.js`) ; le lien n'apparaît donc qu'une fois que Chrome a jugé le jeu installable. Sur **iPhone et iPad**, Apple ne permet aucune installation par code : le lien explique « Partager → Sur l'écran d'accueil ». Le service worker garde une copie des fichiers du jeu pour jouer hors connexion, en « réseau d'abord » : en ligne on reçoit toujours la dernière version, la copie ne sert qu'hors connexion. Il n'est enregistré que dans la version publiée (pas sous `npm run dev`).
+
+**Économie d'énergie (automatique, sans réglage)** : le jeu ne dessine pas le plus possible, pour que le téléphone ou le PC ne chauffe pas et que la batterie dure. Les choix sont dans `src/quality.ts` : **30 images/s sur mobile, 60 sur PC** (même sur un écran à 90, 120 ou 144 Hz) ; **résolution ajustée automatiquement** selon le temps réellement écoulé entre deux images (trop lent → la résolution baisse par paliers jusqu'à 0,75 ; cadence tenue longtemps → elle remonte prudemment, et si une remontée fait rechuter la patience double, pour ne pas osciller) ; résolution maximale de 1,5 sur mobile et de 2 sur PC ; **ombres allégées** (seul le héros projette une ombre portée, les ennemis gardent leur disque d'ombre au sol ; carte d'ombres de 1024 px sur mobile) ; anticrénelage seulement sur les écrans de densité inférieure à 1,5 ; la puce graphique est choisie par le navigateur (plus de « high-performance », qui forçait la plus gourmande des portables) ; **scène figée** (pause, choix de niveau, et au menu les écrans qui cachent la 3D : boutique, sauvegarde, crédits, ouverture des coffres ; pas la collection, qui montre le héros en 3D) redessinée à 10 images/s ; **menu principal à 30 images/s sur PC et 20 sur mobile** (le héros ne fait que respirer ; la cadence de jeu revient pendant l'aperçu d'un héros dans la collection, et la mesure de la résolution automatique ne se fait qu'à la cadence de jeu) ; **musique qui ne se synthétise plus du tout quand le son ou la musique est coupé** (plus de notes fabriquées pour rien, plus de minuteur toutes les 50 ms ; elle repart du début de la piste au retour du son) ; **HUD qui n'écrit dans le DOM que quand une valeur change** (barres de vie et d'XP, jauge spéciale : une écriture de style peut forcer un nouveau calcul de mise en page) ; **filtrage anisotrope du sol** à 2 sur mobile et 4 sur PC ; sur mobile, plus de flou (`backdrop-filter`) derrière les écrans. La simulation suit le temps réel : à 30 images/s le jeu va à la même vitesse, avec des pas de temps plus grands. **Séparation des ennemis par grille** (`src/grid.ts`) : pour ne pas se superposer, les ennemis se repoussent. Comparer chaque paire coûtait environ 45 000 tests par image à 300 ennemis ; une grille de cases (taille : deux fois le plus grand rayon, plus une marge) limite maintenant les tests aux ennemis des cases voisines, soit moins de 5 % des paires pour une foule répartie dans l'arène. Les paires sont traitées dans le même ordre que l'ancienne méthode (`separateBruteForce`, gardée comme référence de test et comme secours si un rayon dépasse la taille des cases) : les positions sont identiques tant qu'aucun ennemi ne se déplace de plus de ~3,8 unités pendant un passage, ce qui n'arrive pas en jeu puisque la foule est séparée à chaque image. **Recherches des armes par index spatial** (`SpatialIndex`, `src/grid.ts`) : tirs, orbes, aura et mines parcouraient les 300 ennemis (un tir le faisait chacun pour soi, à chaque image). Les ennemis sont rangés dans des cases une fois par image (`Enemies.reindex`), puis `Enemies.nearby` ne renvoie que ceux des cases voisines, **dans l'ordre de la liste** : le résultat est exactement celui du parcours complet (un test joue la même partie des deux façons et compare tout). Les reculs infligés pendant l'image déplacent les ennemis après leur rangement : leur somme est suivie, et élargit la recherche, au besoin jusqu'à tous les ennemis. Le compteur du mode `?debug` (voir « Mode debug ») permet de mesurer tout cela.
+
+**Nouvelle version disponible** : une page ou une application laissée ouverte garde l'ancien code jusqu'à son rechargement. Le build écrit donc `version.json` (la version de `package.json`) ; le jeu le lit sans cache au démarrage, au retour au premier plan et toutes les 10 minutes. Si la version du serveur diffère de la sienne, un bandeau « Nouvelle version disponible » avec un bouton **Actualiser** (rechargement de la page) apparaît, **au menu et en fin de partie seulement** : jamais en jeu ni en pause, car recharger ferait perdre la partie en cours. Hors connexion, rien ne s'affiche. Le message dépend du numéro de version : tout changement du jeu doit donc l'augmenter (c'est déjà la règle pour `feat` et `fix`).
+
+## Apparition des ennemis
+
+Les ennemis, boss compris, **apparaissent toujours à l'extérieur de la clôture**, corps entier dehors, puis marchent vers le héros (la clôture est un décor : ils la traversent). Une direction est tirée autour du héros et on suit ce rayon jusqu'à sortir du carré de la clôture (`src/spawn.ts`) : ils arrivent de tous côtés, et plus souvent du côté proche quand le héros longe un bord. Ils n'apparaissent **jamais à moins de 26 unités du héros** (l'ancienne distance fixe) : collé à un bord, les directions trop proches sont écartées, et si aucune ne convient une direction vers le centre de l'arène prend le relais. Un boss apparu dehors n'est pas ramené d'un coup dans l'arène : sa limite de déplacement (arène + 2) ne l'empêche que de s'éloigner davantage. Conséquence sur le rythme : un ennemi met plus de temps à arriver (environ 20 s pour un slime, 10 s pour une chauve-souris, depuis le centre).
 
 ## Ce qu'on ramasse
 
@@ -145,6 +159,25 @@ Avec `npm run dev` uniquement (il n'existe pas dans la version publiée), un bou
 
 Les réglages sont conservés d'une session à l'autre, séparément de la sauvegarde du jeu.
 
+## Mode debug (`?debug`)
+
+Ajouter `?debug` à l'adresse du jeu l'active, dans la version publiée comme sous `npm run dev` : `http://localhost:5173/?debug`, ou `https://robin-delbos.github.io/slime_rush/?debug`. Sans ce paramètre, rien de tout cela n'existe. Sur téléphone : lancer `npm run dev:mobile` (voir « Tester sur téléphone ») puis ouvrir l'adresse `Network` suivie de `/?debug`. Une application installée sur l'écran d'accueil s'ouvre sans barre d'adresse : pour le mode debug, ouvrir le jeu dans le navigateur.
+
+**Compteur de performances** : une petite ligne verte en bas à gauche, mise à jour chaque seconde, par exemple `30 i/s · résolution ×1.25 · 42 appels · 18 k triangles` :
+
+| Valeur | Sens | Comment la lire |
+|---|---|---|
+| `i/s` | Images dessinées par seconde | La cadence plafonnée est de 30 sur mobile et de 60 sur PC en partie ; au menu principal 20 sur mobile et 30 sur PC ; 10 pendant la pause, le choix de niveau et les écrans qui cachent la 3D. Plus bas en pleine partie : l'appareil n'arrive pas à suivre. |
+| `résolution ×` | Pixels dessinés par pixel de l'écran | Au maximum 1,5 sur mobile et 2 sur PC. Si elle baisse en jeu, l'ajustement automatique compense un appareil trop lent ; si elle reste au maximum avec la cadence plafonnée, l'appareil est à l'aise. |
+| `appels` | Appels de dessin par image | Plus c'est bas, moins le processeur et le GPU travaillent. |
+| `k triangles` | Milliers de triangles dessinés par image | Charge géométrique de la scène. |
+
+Pour mesurer avant et après une modification : jouer une partie avancée (beaucoup d'ennemis) et noter ces valeurs. Les raccourcis ci-dessous aident à y arriver vite.
+
+**Raccourcis dans la console** (`F12` sur PC) via `window.__game` : `state()` (état complet de la partie, dont `quality` : cadence, résolution, profil mobile ou PC), `setTime(secondes)` (avancer le temps de survie), `spawn(nombre, distance)` (faire apparaître des ennemis), `bringBosses(distance)` et `killBosses()`, `levelUp()` et `maxUpgrades()`, `fillSpecial()`, `legend()`, `kill()` (tuer le héros), `addGold(montant)` et `chestRandom([tirages])` (truquer le hasard des coffres). Ils servent aussi aux tests de bout en bout.
+
+Pour profiler un vrai téléphone Android depuis le PC : activer le débogage USB, brancher le téléphone, ouvrir `chrome://inspect` dans Chrome sur le PC, puis inspecter la page du jeu (console, onglet Performance).
+
 ## Tests
 
 | Commande | Rôle | Durée |
@@ -154,7 +187,7 @@ Les réglages sont conservés d'une session à l'autre, séparément de la sauve
 | `npm run test:e2e` | Compile le jeu puis le joue dans Chrome sans fenêtre, en format PC et mobile | ~2 min |
 | `npm run test:e2e:mobile` | Joue au doigt sur quatre tailles de téléphone, à la verticale puis à l'horizontale, et fait pivoter l'appareil en pleine partie | ~1 min |
 | `npm run test:e2e:texts` | Sur de petits écrans (320, 360 px, paysage) : aucun texte ne dépasse de son cadre ni de l'écran (armes, héros, amulettes, niveaux, coffres, pause, fin de partie), même avec de très grands nombres ; le cœur de la barre de vie ne recouvre pas les PV ; les cases d'armes et les quatre difficultés sont alignées | ~3 min |
-| `npm run test:e2e:platforms` | Émule deux iPhone (dont un ancien, sans `AudioContext`) et deux Android : icônes identiques (pièce jaune, aucun emoji laissé au système), musique qui démarre au premier geste, partie au doigt, boss, coffre. Chrome fait tourner le tout : ce n'est pas un essai sur un vrai iPhone | ~1 min |
+| `npm run test:e2e:platforms` | Émule deux iPhone (dont un ancien, sans `AudioContext`) et deux Android : icônes identiques (pièce jaune, aucun emoji laissé au système), musique qui démarre au premier geste, partie au doigt, boss, coffre. Aussi l'installation (manifeste, icônes servies, service worker actif, lien « Installer l'application » : Android avec une fausse proposition de Chrome, iPhone avec son explication) et le plein écran et l'horizontal : Android verrouille l'horizontal en plein écran et le libère en sortant, iPhone affiche l'invitation à tourner et met la partie en pause (les API sont remplacées par des témoins, Chrome sans fenêtre ne passe pas vraiment en plein écran). Chrome fait tourner le tout : ce n'est pas un essai sur un vrai iPhone | ~1 min |
 | `npm run test:all` | Types + tests unitaires + test de bout en bout | ~2 min |
 
 À lancer avant de valider une modification : `npm test` pendant le développement, `npm run test:all` avant de considérer une fonctionnalité terminée.
@@ -163,7 +196,7 @@ Les réglages sont conservés d'une session à l'autre, séparément de la sauve
 
 **Test de bout en bout** (`tests/e2e/run.mjs`) : il vérifie le parcours complet (menu, boutique, achat d'une apparence et d'une arme, choix de la difficulté, partie, montée de niveau, mort, retour au menu, sauvegarde conservée après rechargement) et échoue à la moindre erreur ou au moindre avertissement dans la console. Il pilote le Chrome installé sur le poste (Edge en secours), son coupé, sans dépendance supplémentaire. Les captures d'écran de chaque étape sont écrites dans `tests/e2e/output/`. Pour utiliser un autre navigateur, indiquez son chemin dans la variable d'environnement `BROWSER_PATH`.
 
-Ajouter `?debug` à l'adresse du jeu expose `window.__game` (état, mort immédiate, ajout d'or), utilisé par ce test.
+Le mode `?debug` (voir « Mode debug ») expose `window.__game` (état, mort immédiate, ajout d'or), utilisé par ce test.
 
 ## Autres commandes
 
@@ -210,9 +243,15 @@ Réglage à faire une seule fois sur GitHub : *Settings → Pages → Source : G
 | `src/audio.ts` | Bruitages synthétisés (aucun fichier son) |
 | `src/world.ts` | Scène, caméra, lumières, décor |
 | `src/input.ts` | Clavier et joystick tactile |
+| `src/screen.ts` | Plein écran et orientation, sans DOM : quel bouton selon l'appareil, entrée/sortie du plein écran, verrouillage de l'horizontal, invitation à tourner (iPhone) |
+| `src/screenui.ts` | Relie `screen.ts` à la page : boutons, explication, écran « Tournez votre téléphone » |
+| `src/quality.ts` | Économie d'énergie : qualité selon l'appareil, plafond d'images/s (`FrameLimiter`) et résolution automatique (`ResolutionScaler`), sans DOM |
+| `src/grid.ts` | Grilles spatiales : séparation des ennemis (`SeparationGrid`, avec la méthode d'origine en référence) et recherches des armes (`SpatialIndex`) |
+| `src/update.ts`, `src/updateui.ts` | Détection d'une nouvelle version publiée (comparaison avec `version.json`) et bandeau « Actualiser » |
 | `src/ui.ts` | Interface HTML |
 | `src/rng.ts` | Aléatoire de la simulation, remplaçable par une graine fixe |
 | `public/models/` | Modèles 3D (format GLB) |
+| `public/manifest.webmanifest`, `sw.js`, `icon*.svg`, `icon-*.png`, `apple-touch-icon.png` | Installation comme application : manifeste (plein écran, horizontal), service worker (copie hors connexion), icônes (dessinées à partir du logo du jeu ; `icon-maskable-512.png` est la variante découpable d'Android). Les PNG se refont à partir des SVG par une capture Chrome sans fenêtre |
 | `public/confidentialite.html` | Politique de confidentialité (page autonome, liée depuis l'écran des crédits) : à mettre à jour avant d'ajouter publicité, achats ou toute collecte de données |
 | `LICENSE` | Licence du dépôt (tous droits réservés, ressources tierces sous leur propre licence) |
 

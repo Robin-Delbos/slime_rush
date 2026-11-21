@@ -2744,3 +2744,143 @@ h2 {
   max-width: 100%;
   white-space: nowrap;
 }
+
+/* ---------- Plein écran et orientation (mobile, voir src/screen.ts) ---------- */
+
+.pill-btn svg {
+  display: block;
+  width: 1.15em;
+  height: 1.15em;
+}
+
+#btn-fullscreen {
+  display: inline-flex;
+  align-items: center;
+}
+
+#btn-fullscreen.on {
+  background: rgba(30, 130, 70, 0.75);
+}
+
+/* Explication courte, posée par-dessus tous les écrans. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 90;
+  width: max-content;
+  max-width: min(92vw, 420px);
+  padding: 10px 16px;
+  border: 3px solid #fff;
+  border-radius: 16px;
+  background: rgba(20, 30, 60, 0.92);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.3);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* « Tournez votre téléphone » : recouvre tout, y compris le plein écran des coffres. */
+#overlay-rotate {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px 16px;
+  text-align: center;
+  background: linear-gradient(180deg, #2a3a8f, #1c2460);
+}
+
+#overlay-rotate .link-btn {
+  font-size: 15px;
+  padding: 12px 14px;
+}
+
+.rotate-phone {
+  animation: rotate-phone 2.4s ease-in-out infinite;
+}
+
+@keyframes rotate-phone {
+  0%,
+  15% {
+    transform: rotate(0deg);
+  }
+  55%,
+  100% {
+    transform: rotate(-90deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rotate-phone {
+    animation: none;
+  }
+}
+
+/* ---------- Nouvelle version disponible (src/updateui.ts) ---------- */
+
+#update-bar {
+  position: fixed;
+  top: calc(8px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  padding: 6px 8px 6px 16px;
+  border: 3px solid #fff;
+  border-radius: 20px;
+  background: rgba(20, 30, 60, 0.94);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.3);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+#update-bar .btn-small {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  white-space: nowrap;
+}
+
+/* ---------- Économie d'énergie (voir src/quality.ts) ---------- */
+
+/* Sur mobile, le flou sur la 3D qui bouge derrière les écrans coûte cher à chaque image : fond plus opaque à la place. */
+html[data-device='mobile'] .overlay {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-device='mobile'] #overlay-pause,
+html[data-device='mobile'] #overlay-levelup,
+html[data-device='mobile'] #overlay-gameover {
+  background: rgba(24, 28, 70, 0.8);
+}
+
+/* Mesures de performance, seulement avec ?debug (voir src/game.ts). */
+#perf {
+  position: fixed;
+  left: 6px;
+  bottom: calc(6px + env(safe-area-inset-bottom));
+  z-index: 200;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #9fff9f;
+  font: 11px/1.4 monospace;
+  pointer-events: none;
+}
+
+#perf:empty {
+  display: none;
+}

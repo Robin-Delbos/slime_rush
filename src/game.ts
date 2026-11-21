@@ -26,7 +26,10 @@ import {
   selectedDifficulty,
   startingStats,
 } from './meta';
+import { FrameLimiter, ResolutionScaler, isMobileDevice, qualityFor, type Quality } from './quality';
 import { LEGEND_LEVEL, Run } from './run';
+import { setupScreen } from './screenui';
+import { setupUpdates, type UpdateBanner } from './updateui';
 import { PASSIVES, WEAPON_PREFIX } from './upgrades';
 import { WEAPONS } from './weaponData';
 import { Ui } from './ui';
@@ -86,9 +89,26 @@ export class Game {
   private chestRandom: () => number = Math.random;
   /** Outils du mode dev (version de développement uniquement). */
   private dev: DevTools | null = null;
+  /** Bandeau « Nouvelle version disponible ». */
+  private updates: UpdateBanner;
+  /** Qualité d'affichage choisie pour cet appareil (voir src/quality.ts). */
+  private quality: Quality;
+  private limiter: FrameLimiter;
+  private scaler: ResolutionScaler;
+  /** Heure de la dernière image dessinée, et si elle servait à mesurer la machine (cadence de jeu) : sinon l'écart ne mesure rien. */
+  private lastRendered = 0;
+  private wasMeasurable = false;
+  /** Mesure d'images par seconde, affichée seulement avec ?debug. */
+  private perf = { frames: 0, since: 0, fps: 0, text: null as HTMLElement | null };
 
   constructor(canvas: HTMLCanvasElement) {
-    this.world = new World(canvas);
+    const mobile = isMobileDevice(navigator.userAgent, window.matchMedia?.('(pointer: coarse)').matches ?? false);
+    this.quality = qualityFor({ mobile, devicePixelRatio: window.devicePixelRatio });
+    this.limiter = new FrameLimiter(this.quality.maxFps);
+    this.scaler = new ResolutionScaler(this.quality.minPixelRatio, this.quality.maxPixelRatio, 1000 / this.quality.maxFps);
+    // Les styles s'allègent sur mobile (pas de flou sur la 3D qui bouge derrière les écrans).
+    document.documentElement.dataset.device = mobile ? 'mobile' : 'desktop';
+    this.world = new World(canvas, this.quality);
     this.input = new Input(canvas, document.getElementById('joystick')!, document.getElementById('knob')!);
     this.effects = new Effects(this.world.scene, this.world.camera, document.getElementById('floaters')!);
     this.sfx.muted = this.save.muted;
@@ -204,7 +224,12 @@ export class Game {
       },
     });
 
+    this.updates = setupUpdates();
     this.input.onPause = () => this.togglePause();
+    // Plein écran (et horizontal verrouillé) sur mobile ; sur iPhone en vertical, l'invitation à tourner met la partie en pause.
+    setupScreen(() => {
+      if (this.state === 'playing') this.togglePause();
+    });
     // Changer d'onglet ou verrouiller le téléphone met la partie en pause.
     document.addEventListener('visibilitychange', () => {
       // Rien ne joue en arrière-plan : musique et bruitages s'arrêtent, puis reprennent au retour.
@@ -212,9 +237,15 @@ export class Game {
       if (document.hidden && this.state === 'playing') this.togglePause();
     });
 
-    if (new URLSearchParams(window.location.search).has('debug')) this.installDebug();
+    if (new URLSearchParams(window.location.search).has('debug')) {
+      this.installDebug();
+      const text = document.createElement('div');
+      text.id = 'perf';
+      document.getElementById('app')!.append(text);
+      this.perf.text = text;
+    }
 
-    this.world.renderer.setAnimationLoop((ms) => this.frame(ms));
+    this.world.renderer.setAnimationLoop((ms) => this.tick(ms));
     // Mode dev : ce bloc est supprimé de la version publiée (import.meta.env.DEV vaut alors false).
     if (import.meta.env.DEV) {
       void import('./dev').then(({ DevTools }) => {
@@ -437,10 +468,61 @@ export class Game {
     this.ui.setPaused(this.state === 'paused');
   }
 
+  /**
+   * Appelée à chaque top de l'écran : ne dessine que si la cadence plafonnée le permet, et ajuste la résolution
+   * selon le temps réellement écoulé entre deux images dessinées.
+   */
+  private tick(ms: number): void {
+    // Pause, choix de niveau, ou écran du menu qui cache la 3D (boutique, coffres...) : la scène ne bouge pas ou ne se voit
+    // pas, quelques images par seconde suffisent.
+    const frozen = this.state === 'paused' || this.state === 'levelup' || (this.state === 'menu' && this.ui.sceneCovered);
+    // Menu principal : le héros ne fait que respirer, une cadence réduite suffit (sauf quand on le fait tourner dans la collection).
+    const calm = !frozen && this.state === 'menu' && !this.previewing;
+    const fps = frozen ? this.quality.frozenFps : calm ? this.quality.menuFps : this.quality.maxFps;
+    if (fps !== this.limiter.fps) {
+      this.limiter.setFps(fps);
+      // La mesure de la résolution ne se fait qu'à la cadence de jeu : on repart d'une fenêtre neuve.
+      this.scaler.setTarget(1000 / this.quality.maxFps);
+    }
+    if (!this.limiter.shouldRender(ms)) return;
+
+    // Seules les images à la cadence de jeu disent ce que la machine sait faire : ni le chargement, ni la pause, ni le menu.
+    const gap = ms - this.lastRendered;
+    this.lastRendered = ms;
+    const measurable = fps === this.quality.maxFps && this.state !== 'loading';
+    if (measurable && this.wasMeasurable && gap < 1000) {
+      const ratio = this.scaler.record(gap);
+      if (ratio !== null) this.world.setPixelRatio(ratio);
+    }
+    this.wasMeasurable = measurable;
+
+    this.frame(ms);
+    this.measure(ms);
+  }
+
+  /** Compte les images dessinées et, avec ?debug, affiche images/s, résolution, appels de dessin et triangles. */
+  private measure(ms: number): void {
+    const perf = this.perf;
+    // La première mesure part de maintenant : sinon elle compterait tout le temps de chargement de la page.
+    if (perf.since === 0) perf.since = ms;
+    perf.frames++;
+    if (ms - perf.since < 1000) return;
+    perf.fps = Math.round((perf.frames * 1000) / (ms - perf.since));
+    perf.frames = 0;
+    perf.since = ms;
+    if (perf.text) {
+      const { calls, triangles } = this.world.renderer.info.render;
+      perf.text.textContent = `${perf.fps} i/s · résolution ×${this.scaler.ratio} · ${calls} appels · ${Math.round(triangles / 1000)} k triangles`;
+    }
+  }
+
   private frame(ms: number): void {
     // dt plafonné : évite un saut géant après un onglet mis en arrière-plan.
     const dt = Math.min((ms - this.last) / 1000, 0.05);
     this.last = ms;
+    // Actualiser recharge la page : on ne le propose qu'au menu et en fin de partie, pour ne jamais perdre une partie en cours
+    // (même en pause : quitter verse l'or gagné, recharger le perdrait).
+    this.updates.show(this.updates.available && (this.state === 'menu' || this.state === 'gameover'));
     const run = this.run;
     if (!run) {
       this.world.render();
@@ -611,6 +693,7 @@ export class Game {
         style: { ...this.save.style },
         cosmetics: JSON.parse(JSON.stringify(this.save.cosmetics)) as Record<string, string[]>,
         savedWeapons: [...this.save.weapons],
+        quality: { ...this.quality, fps: this.perf.fps, pixelRatio: this.scaler.ratio, mobile: document.documentElement.dataset.device === 'mobile' },
         audio: { state: this.sfx.audio?.ctx.state ?? 'aucun', track: this.music.current, wanted: this.music.wanted, silenced: this.musicSilenced() },
         weapon: this.save.weapon,
         weapons: this.run?.weapons.owned ?? [],

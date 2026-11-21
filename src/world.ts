@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { atmosphereFor } from './atmosphere';
+import type { Quality } from './quality';
 
 /** Tirage pour le décor : volontairement indépendant de l'aléatoire de la simulation. */
 function rand(min: number, max: number): number {
@@ -8,6 +9,9 @@ function rand(min: number, max: number): number {
 
 /** Demi-largeur de la zone jouable (le joueur est borné à ±ARENA). */
 export const ARENA = 40;
+
+/** Demi-côté du carré de la clôture : les ennemis apparaissent au-delà (voir src/spawn.ts). */
+export const FENCE = ARENA + 1.5;
 
 let gradientMap: THREE.DataTexture | null = null;
 
@@ -60,13 +64,15 @@ export class World {
   private ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private hit = new THREE.Vector3();
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, quality: Quality) {
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: true,
-      powerPreference: 'high-performance',
+      antialias: quality.antialias,
+      // Le navigateur choisit : sur un portable à deux cartes graphiques, la puce intégrée suffit à ce jeu
+      // (« high-performance » forçait la plus gourmande, donc la plus chaude).
+      powerPreference: 'default',
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(quality.maxPixelRatio);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
@@ -75,7 +81,7 @@ export class World {
     this.setAtmosphere('normal');
 
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize);
     const cam = this.sun.shadow.camera;
     cam.left = -22;
     cam.right = 22;
@@ -87,7 +93,7 @@ export class World {
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.sun, this.sun.target);
 
-    this.buildGround();
+    this.buildGround(quality.anisotropy);
     this.buildBorder();
     this.buildDecor();
 
@@ -194,6 +200,12 @@ export class World {
     this.renderer.render(this.scene, this.camera);
   }
 
+  /** Change la résolution de rendu (pixels dessinés par pixel CSS) : l'ajustement automatique s'en sert (voir src/quality.ts). */
+  setPixelRatio(ratio: number): void {
+    this.renderer.setPixelRatio(ratio);
+    this.resize();
+  }
+
   private resize(): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -207,7 +219,7 @@ export class World {
    * Sol : damier doux, volontairement plus sombre et moins saturé que les ennemis et les gemmes
    * pour qu'ils ressortent, avec des plaques d'herbe et de terre pour casser l'uniformité.
    */
-  private buildGround(): void {
+  private buildGround(anisotropy: number): void {
     const SIZE = 512;
     const CELLS = 8;
     const cell = SIZE / CELLS;
@@ -242,7 +254,8 @@ export class World {
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.anisotropy = 8;
+    // Filtrage anisotrope : sol net vu de biais, mais chaque niveau coûte de la bande passante mémoire (voir src/quality.ts).
+    tex.anisotropy = anisotropy;
     const size = 240;
     // Une texture couvre 8 cases de 3 unités, soit 24 unités de côté.
     tex.repeat.set(size / 24, size / 24);
@@ -260,7 +273,7 @@ export class World {
    * qui rend le bord visible même sans les arbres derrière.
    */
   private buildBorder(): void {
-    const edge = ARENA + 1.5;
+    const edge = FENCE;
 
     // Sol extérieur : grand carré percé d'un trou aux dimensions de l'arène.
     const outer = new THREE.Shape();

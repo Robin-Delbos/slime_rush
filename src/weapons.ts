@@ -192,6 +192,8 @@ export class Weapons {
   }
 
   update(dt: number, time: number, player: Player, enemies: Enemies): void {
+    // Les ennemis ont fini de bouger pour cette image : on les range une fois pour toutes les recherches des armes.
+    enemies.reindex();
     this.launcher('rifle', dt, player, enemies, RANGE);
     this.launcher('spear', dt, player, enemies, SPEAR_RANGE);
     this.moveShots(dt, enemies);
@@ -258,7 +260,10 @@ export class Weapons {
 
       let dead = s.life <= 0;
       if (!dead) {
-        for (const e of enemies.list) {
+        // Seuls les ennemis proches du tir, dans l'ordre de la liste (comme un parcours complet).
+        const near = enemies.nearby(s.x, s.z, s.radius);
+        for (let k = 0; k < near; k++) {
+          const e = enemies.list[enemies.nearIds[k]];
           if (e.hp <= 0 || s.hit.has(e)) continue;
           const reach = e.radius + s.radius;
           if ((e.x - s.x) ** 2 + (e.z - s.z) ** 2 > reach * reach) continue;
@@ -284,7 +289,9 @@ export class Weapons {
       const a = time * ORB_SPEED + (i * Math.PI * 2) / orbs;
       const ox = player.x + Math.cos(a) * w!.area;
       const oz = player.z + Math.sin(a) * w!.area;
-      for (const e of enemies.list) {
+      const near = enemies.nearby(ox, oz, ORB_RADIUS);
+      for (let k = 0; k < near; k++) {
+        const e = enemies.list[enemies.nearIds[k]];
         if (e.hp <= 0 || e.orbCooldown > 0) continue;
         const reach = e.radius + ORB_RADIUS;
         const dx = e.x - ox;
@@ -319,7 +326,9 @@ export class Weapons {
     this.timers.set('aura', timer);
     if (timer <= 0) {
       let touched = false;
-      for (const e of enemies.list) {
+      const near = enemies.nearby(player.x, player.z, w.area);
+      for (let k = 0; k < near; k++) {
+        const e = enemies.list[enemies.nearIds[k]];
         const dx = e.x - player.x;
         const dz = e.z - player.z;
         const d = Math.hypot(dx, dz) || 0.0001;
@@ -375,7 +384,9 @@ export class Weapons {
       mine.age += dt;
       let blast = mine.age >= MINE_LIFE;
       if (!blast && mine.age >= MINE_ARM_TIME) {
-        for (const e of enemies.list) {
+        const near = enemies.nearby(mine.x, mine.z, MINE_TRIGGER);
+        for (let k = 0; k < near; k++) {
+          const e = enemies.list[enemies.nearIds[k]];
           if (e.hp > 0 && (e.x - mine.x) ** 2 + (e.z - mine.z) ** 2 < (MINE_TRIGGER + e.radius) ** 2) {
             blast = true;
             break;
@@ -383,7 +394,9 @@ export class Weapons {
         }
       }
       if (!blast) continue;
-      for (const e of enemies.list) {
+      const hit = enemies.nearby(mine.x, mine.z, mine.area);
+      for (let k = 0; k < hit; k++) {
+        const e = enemies.list[enemies.nearIds[k]];
         const dx = e.x - mine.x;
         const dz = e.z - mine.z;
         const d = Math.hypot(dx, dz) || 0.0001;

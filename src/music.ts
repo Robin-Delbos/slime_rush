@@ -268,6 +268,9 @@ export class MusicPlayer {
 
   setMuted(muted: boolean): void {
     this.muted = muted;
+    // Muette, la musique ne se synthétise plus du tout (inutile de fabriquer des notes qu'on n'entend pas) ; rendue, elle
+    // repart du début de la piste demandée. Le volume est réglé en dernier : c'est lui que le son suit.
+    this.sync();
     this.applyVolume();
   }
 
@@ -302,19 +305,14 @@ export class MusicPlayer {
       this.bus.gain.value = this.volume();
       this.bus.connect(audio.out);
     }
-    if (this.playing?.name === this.desired) return;
-
-    const old = this.playing;
-    if (old) {
-      old.gain.gain.setTargetAtTime(0, ctx.currentTime, FADE / 3);
-      setTimeout(() => old.gain.disconnect(), FADE * 3000);
-    }
-    this.playing = null;
-    if (!this.desired) {
-      clearInterval(this.timer);
-      this.timer = 0;
+    if (this.muted) {
+      this.stopPlaying(ctx);
       return;
     }
+    if (this.playing?.name === this.desired) return;
+
+    this.stopPlaying(ctx, this.desired !== null);
+    if (!this.desired) return;
     const gain = ctx.createGain();
     gain.gain.value = 0;
     gain.gain.setTargetAtTime(1, ctx.currentTime, FADE / 3);
@@ -322,6 +320,20 @@ export class MusicPlayer {
     this.playing = { name: this.desired, track: TRACKS[this.desired], gain, start: ctx.currentTime + 0.08, scheduled: 0 };
     if (!this.timer) this.timer = setInterval(() => this.tick(), 50);
     this.tick();
+  }
+
+  /** Éteint la piste en cours en fondu, et arrête la programmation des notes (sauf si une autre piste prend le relais). */
+  private stopPlaying(ctx: AudioContext, keepTimer = false): void {
+    const old = this.playing;
+    this.playing = null;
+    if (!keepTimer) {
+      clearInterval(this.timer);
+      this.timer = 0;
+    }
+    if (old) {
+      old.gain.gain.setTargetAtTime(0, ctx.currentTime, FADE / 3);
+      setTimeout(() => old.gain.disconnect(), FADE * 3000);
+    }
   }
 
   /** Programme les notes des prochaines fractions de seconde. */

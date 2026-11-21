@@ -7,6 +7,13 @@
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
     <meta name="theme-color" content="#8fd3ff" />
+    <!-- Lancé depuis l'écran d'accueil, le jeu s'ouvre sans barre de navigateur (voir public/manifest.webmanifest). -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Slime Rush" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Slime Rush</title>
   </head>
   <body>
@@ -101,6 +108,12 @@
             <button id="btn-music-menu" class="pill pill-btn" aria-label="Activer ou couper la musique" aria-pressed="true">🎵</button>
             <button id="btn-sound" class="pill pill-btn" aria-label="Activer ou couper le son">🔊</button>
             <button id="btn-save" class="pill pill-btn" aria-label="Exporter ou importer la sauvegarde">💾</button>
+            <!-- Seulement sur téléphone et tablette (voir src/screen.ts). Icône dessinée : pas d'emoji. -->
+            <button id="btn-fullscreen" class="pill pill-btn hidden" aria-label="Plein écran" aria-pressed="false">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6" />
+              </svg>
+            </button>
           </div>
         </div>
         <div class="menu-bottom">
@@ -121,6 +134,8 @@
           <div class="menu-foot">
             <span id="version" class="version"></span>
             <button id="btn-credits" class="link-btn">Crédits et licences</button>
+            <!-- Seulement sur téléphone et tablette, tant que le jeu n'est pas installé (voir src/screen.ts). -->
+            <button id="btn-install" class="link-btn hidden">Installer l’application</button>
           </div>
         </div>
       </div>
@@ -251,6 +266,7 @@
         <div class="menu-actions">
           <button id="btn-sound-pause" class="btn btn-small btn-toggle" aria-pressed="true">🔊 Son : oui</button>
           <button id="btn-music" class="btn btn-small btn-toggle" aria-pressed="true">🎵 Musique : oui</button>
+          <button id="btn-fullscreen-pause" class="btn btn-small btn-toggle hidden" aria-pressed="false">Plein écran : non</button>
         </div>
         <button id="btn-quit" class="btn btn-alt">Quitter la partie</button>
         <p class="hint">En quittant, vous conservez l'or gagné pendant cette partie.</p>
@@ -264,6 +280,28 @@
           <button id="btn-menu" class="btn btn-alt">Menu</button>
           <button id="btn-restart" class="btn">Rejouer</button>
         </div>
+      </div>
+
+      <!-- Nouvelle version publiée : montré au menu et en fin de partie seulement (voir src/updateui.ts). -->
+      <div id="update-bar" class="hidden" role="status">
+        <span>Nouvelle version disponible</span>
+        <button id="btn-update" class="btn btn-small">Actualiser</button>
+      </div>
+
+      <!-- Explication (iPhone) : le plein écran passe par l'écran d'accueil. -->
+      <p id="fullscreen-hint" class="toast hidden" role="status"></p>
+
+      <!-- iPhone en vertical : Apple interdit de verrouiller l'horizontal, on invite à tourner le téléphone. -->
+      <div id="overlay-rotate" class="hidden" role="alertdialog" aria-labelledby="rotate-title">
+        <svg class="rotate-phone" viewBox="0 0 64 64" width="96" height="96" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="20" y="6" width="24" height="44" rx="5" />
+          <path d="M30 44h4" />
+        </svg>
+        <h2 id="rotate-title">Tournez votre téléphone</h2>
+        <p class="hint">Slime Rush est plus agréable à l’horizontale.</p>
+        <!-- Android : le plein écran verrouille l'horizontal, l'appareil tourne tout seul (voir src/screen.ts). -->
+        <button id="btn-rotate-fullscreen" class="btn btn-small hidden">Plein écran</button>
+        <button id="btn-rotate-skip" class="link-btn">Jouer quand même à la verticale</button>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

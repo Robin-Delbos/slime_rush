@@ -6,6 +6,9 @@ const TAP_MAX_TRAVEL = 12;
 /**
  * Entrées unifiées : clavier (ZQSD / WASD / flèches) et joystick flottant
  * (doigt ou clic maintenu n'importe où sur la zone de jeu).
+ *
+ * Jeu à deux mains sur mobile : le premier doigt posé déplace le héros ; tant qu'il reste posé, chaque autre doigt ne déplace
+ * rien, mais un appui bref de sa part est un « tap » (attaque spéciale à l'endroit touché).
  */
 export class Input {
   private keys = new Set<string>();
@@ -17,6 +20,8 @@ export class Input {
   private downTime = 0;
   /** Plus grand écart (px) entre le point d'appui et le doigt pendant l'appui en cours. */
   private travel = 0;
+  /** Doigts posés en plus du premier : ils ne servent qu'à taper. */
+  private extra = new Map<number, { x: number; y: number; time: number; travel: number }>();
 
   /** Appui bref sans glisser sur la zone de jeu (coordonnées écran). */
   onTap?: (clientX: number, clientY: number) => void;
@@ -47,7 +52,11 @@ export class Input {
     });
 
     surface.addEventListener('pointerdown', (e) => {
-      if (this.pointerId !== null) return;
+      if (this.pointerId !== null) {
+        // Un autre doigt pendant que le premier déplace le héros : il ne touche pas au joystick, on suit son appui pour un éventuel tap.
+        if (e.pointerId !== this.pointerId) this.extra.set(e.pointerId, { x: e.clientX, y: e.clientY, time: performance.now(), travel: 0 });
+        return;
+      }
       this.pointerId = e.pointerId;
       surface.setPointerCapture(e.pointerId);
       this.originX = e.clientX;
@@ -60,16 +69,25 @@ export class Input {
       this.moveStick(e.clientX, e.clientY);
     });
     surface.addEventListener('pointermove', (e) => {
-      if (e.pointerId === this.pointerId) this.moveStick(e.clientX, e.clientY);
+      const extra = this.extra.get(e.pointerId);
+      if (extra) extra.travel = Math.max(extra.travel, Math.hypot(e.clientX - extra.x, e.clientY - extra.y));
+      else if (e.pointerId === this.pointerId) this.moveStick(e.clientX, e.clientY);
     });
     surface.addEventListener('pointerup', (e) => {
+      const extra = this.extra.get(e.pointerId);
+      if (extra) {
+        this.extra.delete(e.pointerId);
+        if (performance.now() - extra.time < TAP_MAX_MS && extra.travel < TAP_MAX_TRAVEL) this.onTap?.(e.clientX, e.clientY);
+        return;
+      }
       if (e.pointerId !== this.pointerId) return;
       const tap = performance.now() - this.downTime < TAP_MAX_MS && this.travel < TAP_MAX_TRAVEL;
-      this.release();
+      this.releaseStick();
       if (tap) this.onTap?.(e.clientX, e.clientY);
     });
     surface.addEventListener('pointercancel', (e) => {
-      if (e.pointerId === this.pointerId) this.release();
+      this.extra.delete(e.pointerId);
+      if (e.pointerId === this.pointerId) this.releaseStick();
     });
     surface.addEventListener('contextmenu', (e) => e.preventDefault());
   }
@@ -90,8 +108,14 @@ export class Input {
     return { x: this.stickX, y: this.stickY };
   }
 
-  /** Relâche le joystick (utilisé quand un écran passe par-dessus le jeu). */
+  /** Relâche tout : le joystick et les doigts supplémentaires (utilisé quand un écran passe par-dessus le jeu). */
   release(): void {
+    this.extra.clear();
+    this.releaseStick();
+  }
+
+  /** Relâche le joystick seul : un doigt supplémentaire encore posé garde son tap possible. */
+  private releaseStick(): void {
     if (this.pointerId !== null && this.surface.hasPointerCapture(this.pointerId)) {
       this.surface.releasePointerCapture(this.pointerId);
     }

@@ -1,7 +1,9 @@
 import * as THREE from 'three';
+import { SeparationGrid, SpatialIndex } from './grid';
 import type { Player } from './player';
 import { rand, random } from './rng';
-import { ARENA, toonMaterial } from './world';
+import { spawnOutside } from './spawn';
+import { ARENA, FENCE, toonMaterial } from './world';
 
 export interface EnemyType {
   index: number;
@@ -170,13 +172,25 @@ export interface EnemyMods {
 export const NO_MODS: EnemyMods = { count: 1, hp: 1, damage: 1 };
 
 export const MAX_ENEMIES = 300;
-const SPAWN_DISTANCE = 26;
+/** Marge entre la clôture et un ennemi qui apparaît : il est entièrement dehors, corps compris. */
+const SPAWN_GAP = 1;
+/** Demi-largeur des grilles de recherche : l'arène, la clôture et ce qui se trouve derrière (les boss y arrivent par l'extérieur). */
+const GRID_HALF = ARENA + 40;
 const DEATH_TIME = 0.22;
 const FLASH = new THREE.Color(3, 3, 3);
 const UP = new THREE.Vector3(0, 1, 0);
 
+/** Plus grand rayon d'ennemi (un boss) : fixe la taille des cases de la grille de séparation. */
+const MAX_ENEMY_RADIUS = Math.max(...ENEMY_TYPES.map((t) => t.radius));
+
 export class Enemies {
   readonly list: Enemy[] = [];
+  /** Les ennemis restent dans l'arène élargie de leur distance d'apparition ; au-delà, la grille les range au bord, sans erreur. */
+  private grid = new SeparationGrid(MAX_ENEMY_RADIUS, GRID_HALF, MAX_ENEMIES);
+  /** Index pour les recherches des armes (voir `nearby`). */
+  private index = new SpatialIndex(MAX_ENEMY_RADIUS, GRID_HALF, MAX_ENEMIES);
+  /** Résultat de la dernière recherche `nearby` : indices dans `list`, par ordre croissant. */
+  nearIds = new Int32Array(MAX_ENEMIES);
   onHit?: (e: Enemy, damage: number) => void;
 
   private corpses: Corpse[] = [];
@@ -213,7 +227,8 @@ export class Enemies {
         mesh.instanceColor!.setUsage(THREE.DynamicDrawUsage);
         mesh.count = 0;
         mesh.visible = false;
-        mesh.castShadow = true;
+        // Pas d'ombre portée pour les ennemis (jusqu'à 300 dessinés une seconde fois) : le disque d'ombre au sol suffit.
+        mesh.castShadow = false;
         mesh.frustumCulled = false;
         scene.add(mesh);
         return mesh;
@@ -376,9 +391,12 @@ export class Enemies {
       vz = b.dirZ * BOSS_CHARGE_SPEED;
       if (b.timer <= 0) this.endAttack(e, b);
     }
-    const limit = ARENA + 2;
-    e.x = Math.max(-limit, Math.min(limit, e.x + vx * dt));
-    e.z = Math.max(-limit, Math.min(limit, e.z + vz * dt));
+    // Un boss ne s'éloigne pas de l'arène, mais celui qui apparaît derrière la clôture doit pouvoir y entrer : sa limite
+    // est sa position du moment si elle est plus large (il ne peut qu'aller vers l'intérieur, ou rester).
+    const limitX = Math.max(ARENA + 2, Math.abs(e.x));
+    const limitZ = Math.max(ARENA + 2, Math.abs(e.z));
+    e.x = Math.max(-limitX, Math.min(limitX, e.x + vx * dt));
+    e.z = Math.max(-limitZ, Math.min(limitZ, e.z + vz * dt));
 
     // Contact évalué après le déplacement, comme pour les autres ennemis.
     const reach = e.radius + player.radius;
@@ -424,6 +442,23 @@ export class Enemies {
     return this.bolts.length;
   }
 
+  /** Range les ennemis dans l'index des recherches. À appeler une fois par image, quand ils ont fini de bouger. */
+  reindex(): void {
+    this.index.rebuild(this.list);
+  }
+
+  /**
+   * Ennemis qui peuvent être touchés par un cercle de rayon `reach` centré en (x, z), sans parcourir toute la liste :
+   * leurs indices sont écrits dans `nearIds` (ordre de la liste), et leur nombre est renvoyé. L'appelant fait le test exact,
+   * qui donne le même résultat qu'un parcours complet de `list`.
+   */
+  nearby(x: number, z: number, reach: number): number {
+    // Garde-fou : un ennemi apparu ou retiré depuis le rangement (tests, appels hors de la boucle de jeu).
+    if (this.index.count !== this.list.length) this.index.rebuild(this.list);
+    if (this.nearIds.length < this.list.length) this.nearIds = new Int32Array(this.list.length);
+    return this.index.query(x, z, reach, this.nearIds);
+  }
+
   /** Ennemi vivant le plus proche dans le rayon donné. */
   nearest(x: number, z: number, range: number): Enemy | null {
     let best: Enemy | null = null;
@@ -446,6 +481,8 @@ export class Enemies {
     const knock = 0.18 / e.radius;
     e.x += dirX * knock;
     e.z += dirZ * knock;
+    // Le recul déplace l'ennemi après son rangement dans l'index : on en tient compte (borne, sans racine carrée).
+    this.index.noteMove(knock * (Math.abs(dirX) + Math.abs(dirZ)));
     this.onHit?.(e, damage);
   }
 
@@ -478,10 +515,11 @@ export class Enemies {
     }
 
     const hp = type.hp * (1 + time / 90) * this.mods.hp;
-    const angle = rand(0, Math.PI * 2);
+    // À l'extérieur de la clôture, dans une direction tirée autour du héros (voir src/spawn.ts).
+    const at = spawnOutside(aroundX, aroundZ, FENCE + type.radius + SPAWN_GAP, () => rand(0, Math.PI * 2));
     const enemy: Enemy = {
-      x: aroundX + Math.cos(angle) * SPAWN_DISTANCE,
-      z: aroundZ + Math.sin(angle) * SPAWN_DISTANCE,
+      x: at.x,
+      z: at.z,
       hp,
       maxHp: hp,
       type,
@@ -506,24 +544,8 @@ export class Enemies {
 
   /** Empêche les ennemis de s'empiler au même endroit. */
   private separate(): void {
-    const list = this.list;
-    for (let i = 0; i < list.length; i++) {
-      const a = list[i];
-      for (let j = i + 1; j < list.length; j++) {
-        const b = list[j];
-        const dx = b.x - a.x;
-        const dz = b.z - a.z;
-        const min = a.radius + b.radius;
-        const d2 = dx * dx + dz * dz;
-        if (d2 >= min * min || d2 === 0) continue;
-        const d = Math.sqrt(d2);
-        const push = (min - d) / d / 2;
-        a.x -= dx * push;
-        a.z -= dz * push;
-        b.x += dx * push;
-        b.z += dz * push;
-      }
-    }
+    // Grille spatiale : seuls les ennemis des cases voisines sont comparés (voir src/grid.ts), au lieu de toutes les paires.
+    this.grid.separate(this.list);
   }
 
   private placeShadow(index: number, x: number, z: number, radius: number): void {

@@ -297,6 +297,72 @@ describe('Musique : le lecteur', () => {
     expect(last()).toBeCloseTo(MUSIC_VOLUME);
   });
 
+  it('muette, la musique ne se synthétise plus du tout : plus de notes, plus de minuteur', () => {
+    const { ctx, handle, log } = fakeAudio();
+    const player = new MusicPlayer(() => handle);
+    player.setTrack('game');
+    expect(player.current).toBe('game');
+    player.setMuted(true);
+    expect(player.current).toBeNull();
+    // La piste demandée est retenue pour le retour du son.
+    expect(player.wanted).toBe('game');
+    const oscillators = log.oscillators;
+    for (let t = 0; t < 5; t += 0.05) {
+      ctx.currentTime = t;
+      vi.advanceTimersByTime(50);
+    }
+    expect(log.oscillators).toBe(oscillators);
+    // Plus aucun minuteur en attente (ni le programmateur de notes, ni la coupure en fondu).
+    vi.advanceTimersByTime(5000);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('muette, demander une autre piste ne la lance pas ; le son revenu, la bonne piste repart', () => {
+    const { ctx, handle, log } = fakeAudio();
+    const player = new MusicPlayer(() => handle);
+    player.setTrack('menu');
+    player.setMuted(true);
+    const oscillators = log.oscillators;
+    player.setTrack('boss');
+    player.setTrack('game');
+    expect(player.current).toBeNull();
+    expect(log.oscillators).toBe(oscillators);
+    ctx.currentTime = 7;
+    player.setMuted(false);
+    expect(player.current).toBe('game');
+    expect(log.oscillators).toBeGreaterThan(oscillators);
+    expect(Math.min(...log.starts.slice(-3))).toBeGreaterThanOrEqual(7);
+    // Le volume est celui de la musique, pas celui de la nouvelle piste.
+    expect(log.targets[log.targets.length - 1].value).toBeCloseTo(MUSIC_VOLUME);
+  });
+
+  it('couper puis remettre la musique avant tout geste (audio absent) ne casse rien', () => {
+    let available = false;
+    const { handle } = fakeAudio();
+    const player = new MusicPlayer(() => (available ? handle : null));
+    player.setTrack('menu');
+    player.setMuted(true);
+    player.setMuted(false);
+    available = true;
+    player.resume();
+    expect(player.current).toBe('menu');
+  });
+
+  it('muette dès le début : rien ne se joue au premier geste, tout démarre quand le son revient', () => {
+    let available = false;
+    const { handle, log } = fakeAudio();
+    const player = new MusicPlayer(() => (available ? handle : null));
+    player.setMuted(true);
+    player.setTrack('menu');
+    available = true;
+    player.resume();
+    expect(player.current).toBeNull();
+    expect(log.oscillators).toBe(0);
+    player.setMuted(false);
+    expect(player.current).toBe('menu');
+    expect(log.oscillators).toBeGreaterThan(0);
+  });
+
   it('reste plus discrète que les bruitages', () => {
     expect(MUSIC_VOLUME).toBeLessThan(0.5);
     expect(DUCK_RATIO).toBeLessThan(1);

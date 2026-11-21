@@ -187,6 +187,7 @@ async function scenario(page, url, viewport) {
   // --- Menu ---
   await page.waitFor('le chargement des modèles', `!!window.__game && document.querySelector('#btn-start') && !document.querySelector('#btn-start').disabled`);
   check((await page.game()).state === 'menu', 'le jeu démarre sur le menu');
+  await checkPerfCounter(page, 'PC', false);
   check((await page.game()).hasModel, 'le héros a un modèle 3D');
   check((await page.eval(`document.querySelectorAll('.char-card').length`)) === 8, 'huit héros sont proposés');
   check((await page.eval(`document.querySelectorAll('.weapon-card').length`)) === 4, 'quatre armes de départ sont proposées');
@@ -585,6 +586,17 @@ const DEVICES = [
   { name: 'petit-horizontal', width: 667, height: 375 },
 ];
 
+/**
+ * Téléphone ou tablette tenu à la verticale : l'invitation à tourner s'affiche par-dessus le jeu. Les tests qui jouent
+ * à la verticale choisissent « Jouer quand même ». Renvoie vrai si l'invitation était là.
+ */
+async function dismissRotateInvitation(page, label) {
+  if (!(await page.visible('#overlay-rotate'))) return false;
+  await page.tapElement('#btn-rotate-skip');
+  check(!(await page.visible('#overlay-rotate')), `${label} : « Jouer quand même à la verticale » referme l’invitation`);
+  return true;
+}
+
 async function setDevice(page, width, height) {
   await page.send('Emulation.setDeviceMetricsOverride', {
     width,
@@ -594,6 +606,34 @@ async function setDevice(page, width, height) {
     screenOrientation: width > height ? { type: 'landscapePrimary', angle: 90 } : { type: 'portraitPrimary', angle: 0 },
   });
   await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+}
+
+/**
+ * Mode ?debug et économie d'énergie : le compteur de performances est visible en bas à gauche et se remplit, et le flou
+ * derrière les écrans n'existe que sur ordinateur (voir src/quality.ts).
+ */
+async function checkPerfCounter(page, label, mobile) {
+  await page.waitFor('le compteur de performances', `(document.querySelector('#perf')?.textContent ?? '').includes('i/s')`, 5000);
+  const perf = await page.eval(`(() => {
+    const node = document.querySelector('#perf');
+    const r = node.getBoundingClientRect();
+    // Le compteur ne reçoit pas les appuis (pointer-events: none), donc elementFromPoint l'ignorerait : on le rend touchable le temps de la mesure.
+    node.style.pointerEvents = 'auto';
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    node.style.pointerEvents = '';
+    return {
+      text: node.textContent,
+      fixed: getComputedStyle(node).position === 'fixed',
+      inside: r.width > 0 && r.height > 0 && r.left >= 0 && r.bottom <= innerHeight + 1 && r.top > innerHeight / 2,
+      onTop: top === node,
+      device: document.documentElement.dataset.device,
+      blur: getComputedStyle(document.querySelector('#overlay-pause')).backdropFilter,
+    };
+  })()`);
+  check(perf.fixed && perf.inside, `${label} : le compteur ?debug est posé en bas à gauche (${perf.text})`);
+  check(perf.onTop, `${label} : rien ne recouvre le compteur ?debug`);
+  check(perf.device === (mobile ? 'mobile' : 'desktop'), `${label} : l'appareil est reconnu comme ${mobile ? 'mobile' : 'PC'} (${perf.device})`);
+  check(mobile ? perf.blur === 'none' : perf.blur.includes('blur'), `${label} : ${mobile ? 'pas de flou derrière les écrans sur mobile' : 'flou conservé derrière les écrans sur PC'} (${perf.blur})`);
 }
 
 /** Une liste d'éléments doit être atteignable au doigt. */
@@ -626,6 +666,13 @@ async function orientationScenario(page, url, device) {
   await page.send('Page.navigate', { url: `${url}?debug` });
   await page.waitFor('le chargement des modèles', `!!window.__game && document.querySelector('#btn-start') && !document.querySelector('#btn-start').disabled`);
   await sleep(500);
+  // Tenu à la verticale, l'appareil reçoit l'invitation à tourner ; à l'horizontale, jamais.
+  if (device.height > device.width) {
+    check(await page.visible('#overlay-rotate'), `${device.name} : en vertical, l’invitation à tourner s’affiche`);
+    await dismissRotateInvitation(page, device.name);
+  } else {
+    check(!(await page.visible('#overlay-rotate')), `${device.name} : à l’horizontal, pas d’invitation`);
+  }
 
   // --- Menu ---
   await checkNoOverflow(page, 'menu');
@@ -826,6 +873,51 @@ async function orientationScenario(page, url, device) {
   await page.tap(target.x, target.y);
   check((await page.game()).charge < 1, 'un appui bref sur le terrain déclenche l’attaque spéciale');
 
+  // Jeu à deux mains : un doigt déplace le héros, un deuxième appui bref (autre doigt) déclenche l'attaque spéciale.
+  await page.eval('window.__game.fillSpecial()');
+  await sleep(150);
+  const left = at(0.2, 0.7);
+  const leftMoved = { x: left.x + 90, y: left.y };
+  const rightHand = at(0.7, 0.4);
+  const twoStart = await page.game();
+  await page.eval("window.__ev = []; for (const t of ['pointerdown', 'pointerup']) document.querySelector('#game').addEventListener(t, (e) => window.__ev.push(t.slice(7) + ':' + e.pointerId + ':' + (e.isPrimary ? 'P' : 's')))");
+  await page.touch('touchStart', [left]);
+  for (let i = 1; i <= 6; i++) {
+    await page.touch('touchMove', [{ x: left.x + (90 * i) / 6, y: left.y }]);
+    await sleep(25);
+  }
+  await sleep(150);
+  const moving = await page.game();
+  check(moving.x > twoStart.x + 0.3, 'à deux mains : le premier doigt déplace le héros');
+
+  // Un vrai deuxième doigt (les outils de test ne savent pas en lever un seul : il reste posé, donc c'est un appui long, sans tap).
+  await page.touch('touchStart', [leftMoved, rightHand]);
+  await sleep(450);
+  const events = await page.eval("window.__ev.join(' ')");
+  check(/down:\d+:P/.test(events) && /down:\d+:s/.test(events),`à deux mains : Chrome envoie un événement distinct pour le deuxième doigt (${events})`);
+  check((await page.game()).charge >= 1, 'à deux mains : un deuxième doigt qui reste posé ne déclenche pas l’attaque spéciale');
+  const beforeTap = await page.game();
+
+  // Appuis d'un deuxième doigt : de vrais événements de pointeur envoyés à la page, pendant que le premier doigt déplace toujours le héros.
+  const secondFinger = (id, hold) =>
+    page.eval(`(async () => {
+      const surface = document.querySelector('#game');
+      const send = (type) => surface.dispatchEvent(new PointerEvent(type, { pointerId: ${id}, pointerType: 'touch', isPrimary: false, bubbles: true, clientX: ${rightHand.x}, clientY: ${rightHand.y} }));
+      send('pointerdown');
+      await new Promise((resolve) => setTimeout(resolve, ${hold}));
+      send('pointerup');
+    })()`);
+  await secondFinger(91, 450);
+  check((await page.game()).charge >= 1, 'à deux mains : un deuxième appui trop long ne déclenche pas l’attaque spéciale');
+  await secondFinger(92, 60);
+  await sleep(150);
+  check((await page.game()).charge < 1, 'à deux mains : un deuxième appui bref déclenche l’attaque spéciale');
+  await sleep(500);
+  const afterTap = await page.game();
+  check(afterTap.x > beforeTap.x + 0.5, 'à deux mains : le premier doigt continue de déplacer le héros pendant et après le tap');
+  await page.touch('touchEnd', []);
+  await sleep(150);
+
   // Pause au doigt.
   await page.tapElement('#btn-pause');
   check((await page.game()).state === 'paused', 'le bouton pause répond au doigt');
@@ -848,6 +940,13 @@ async function orientationScenario(page, url, device) {
   const before = await page.game();
   await setDevice(page, device.height, device.width);
   await sleep(500);
+  if (device.width > device.height) {
+    // De l'horizontal vers la vertical : l'invitation apparaît et la partie se met en pause ; on joue quand même et on reprend.
+    check(await page.visible('#overlay-rotate'), `${device.name} : en tournant vers la verticale, l’invitation s’affiche`);
+    check((await page.game()).state === 'paused', `${device.name} : la partie se met en pause`);
+    await dismissRotateInvitation(page, device.name);
+    await page.tapElement('#btn-resume');
+  }
   const size = await page.eval('({ w: innerWidth, h: innerHeight, cw: document.querySelector("canvas").clientWidth, ch: document.querySelector("canvas").clientHeight })');
   check(size.w === device.height && size.h === device.width, `le téléphone a pivoté (${size.w}×${size.h})`);
   check(size.cw === size.w && size.ch === size.h, `le jeu occupe tout l'écran après la rotation (canvas ${size.cw}×${size.ch})`);
@@ -959,6 +1058,29 @@ const PLATFORMS = [
   },
 ];
 
+/** Tablettes : l'invitation à tourner s'y affiche aussi ; le bouton « Plein écran » seulement là où le verrouillage existe. */
+const TABLETS = [
+  {
+    name: 'ipad',
+    width: 820,
+    height: 1180,
+    dpr: 2,
+    platform: 'MacIntel',
+    ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+    // Safari ne sait pas verrouiller l'orientation.
+    canLock: false,
+  },
+  {
+    name: 'tablette-android',
+    width: 800,
+    height: 1280,
+    dpr: 2,
+    platform: 'Linux armv81',
+    ua: 'Mozilla/5.0 (Linux; Android 14; SM-X710) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    canLock: true,
+  },
+];
+
 /** Ce qu'iOS a de différent, injecté dans la page avant tout le reste. */
 function platformShims(platform) {
   const lines = [];
@@ -966,6 +1088,24 @@ function platformShims(platform) {
   if (!platform.ios) lines.push("Object.defineProperty(Navigator.prototype, 'vibrate', { value: () => { window.__vibrations = (window.__vibrations || 0) + 1; return true; }, configurable: true });");
   // iOS n'a pas de vibration.
   if (platform.ios) lines.push("Object.defineProperty(Navigator.prototype, 'vibrate', { value: undefined, configurable: true });");
+  // Plein écran et orientation : Chrome sans fenêtre ne les fait pas vraiment, on remplace les API par des témoins
+  // (état du plein écran, verrouillages demandés). iOS : l'API plein écran n'existe pas sur iPhone.
+  lines.push(`(() => {
+    window.__fs = { locks: [], unlocks: 0 };
+    // Chrome déclenche lui-même la vraie proposition d'installation (le jeu est installable) : on la retient, pour que seule la fausse, envoyée par le test, atteigne le jeu.
+    window.addEventListener('beforeinstallprompt', (event) => { if (!event.__fake) event.stopImmediatePropagation(); }, true);
+    let current = null;
+    Object.defineProperty(Document.prototype, 'fullscreenEnabled', { get: () => ${platform.ios ? 'false' : 'true'}, configurable: true });
+    ${
+      platform.ios
+        ? ''
+        : `Object.defineProperty(Document.prototype, 'fullscreenElement', { get: () => current, configurable: true });
+    Document.prototype.exitFullscreen = async function () { current = null; document.dispatchEvent(new Event('fullscreenchange')); };
+    Element.prototype.requestFullscreen = async function () { current = this; document.dispatchEvent(new Event('fullscreenchange')); };`
+    }
+    const orientation = { ${platform.canLock === false ? '' : 'lock: async (kind) => { window.__fs.locks.push(kind); },'} unlock: () => { window.__fs.unlocks++; } };
+    Object.defineProperty(Screen.prototype, 'orientation', { get: () => orientation, configurable: true });
+  })();`);
   if (platform.oldAudio) lines.push("window.webkitAudioContext = window.AudioContext; Object.defineProperty(window, 'AudioContext', { value: undefined, configurable: true });");
   return lines.join('\n');
 }
@@ -988,6 +1128,10 @@ async function platformScenario(page, url, platform) {
   await page.send('Page.navigate', { url: `${url}?debug` });
   await page.waitFor('le chargement des modèles', `!!window.__game && document.querySelector('#btn-start') && !document.querySelector('#btn-start').disabled`);
   await sleep(600);
+
+  // Téléphone en vertical (iPhone comme Android) : l'invitation à tourner recouvre le jeu ; on choisit de jouer à la verticale.
+  check(await page.visible('#overlay-rotate'), `${platform.name} en vertical : l’invitation à tourner s’affiche`);
+  await dismissRotateInvitation(page, platform.name);
 
   check((await page.eval('navigator.userAgent')) === platform.ua, `le navigateur se présente comme ${platform.name}`);
   if (platform.ios) check((await page.eval("typeof navigator.vibrate")) === 'undefined', 'iOS : pas de vibration, le jeu doit s’en passer');
@@ -1063,6 +1207,199 @@ async function platformScenario(page, url, platform) {
   check(page.problems.length === 0, `aucune erreur ni avertissement dans la console${page.problems.length ? ' :\n' + page.problems.join('\n') : ''}`);
 
   if (shim) await page.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: shim.identifier });
+}
+
+/**
+ * Plein écran et horizontal sur mobile.
+ * Android : le bouton passe en plein écran et verrouille l'horizontal, sans jamais imposer de rotation à l'écran.
+ * iPhone (Apple l'interdit) : le bouton explique l'installation sur l'écran d'accueil, et l'invitation à tourner le téléphone
+ * s'affiche en vertical et met la partie en pause.
+ */
+async function screenScenario(page, url, platform) {
+  const rotate = (landscape) =>
+    page.send('Emulation.setDeviceMetricsOverride', {
+      width: landscape ? Math.max(platform.width, platform.height) : Math.min(platform.width, platform.height),
+      height: landscape ? Math.min(platform.width, platform.height) : Math.max(platform.width, platform.height),
+      deviceScaleFactor: platform.dpr,
+      mobile: true,
+      screenOrientation: landscape ? { type: 'landscapePrimary', angle: 90 } : { type: 'portraitPrimary', angle: 0 },
+    });
+  await page.send('Emulation.setUserAgentOverride', { userAgent: platform.ua, platform: platform.platform });
+  await rotate(true);
+  await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  const shim = await page.send('Page.addScriptToEvaluateOnNewDocument', { source: platformShims(platform) });
+  await page.send('Page.navigate', { url: `${url}?debug` });
+  await page.waitFor('la page de jeu', `!!document.querySelector('#btn-start')`);
+  await page.eval('localStorage.clear()');
+  await page.send('Page.navigate', { url: `${url}?debug` });
+  await page.waitFor('le chargement des modèles', `!!window.__game && document.querySelector('#btn-start') && !document.querySelector('#btn-start').disabled`);
+  await sleep(500);
+  const rotateShown = () => page.visible('#overlay-rotate');
+  const state = async () => (await page.game()).state;
+
+  // À l'horizontal : jamais d'invitation, le bouton de plein écran est dans le menu.
+  check(!(await rotateShown()), 'à l’horizontal, aucune invitation à tourner le téléphone');
+  await checkPerfCounter(page, platform.name, true);
+  await checkReachable(page, 'le bouton plein écran est atteignable au doigt dans le menu', ['#btn-fullscreen']);
+
+  // Installation comme application : le navigateur doit pouvoir la proposer (manifeste, icônes, service worker).
+  const installable = await page.eval(`(async () => {
+    const manifest = await (await fetch('./manifest.webmanifest')).json();
+    const missing = [];
+    for (const icon of manifest.icons) {
+      const response = await fetch(new URL(icon.src, document.baseURI));
+      if (!response.ok || !(response.headers.get('content-type') ?? '').startsWith('image/')) missing.push(icon.src);
+    }
+    const registration = await navigator.serviceWorker.getRegistration();
+    return { missing, registered: !!registration };
+  })()`);
+  check(installable.missing.length === 0, `toutes les icônes du manifeste sont servies${installable.missing.length ? ' (manquantes : ' + installable.missing.join(', ') + ')' : ''}`);
+  check(installable.registered, 'le service worker est enregistré (condition pour « Installer l’application » sur Android)');
+  await page.waitFor('le service worker actif', `(async () => !!(await navigator.serviceWorker.getRegistration())?.active)()`, 5000);
+
+  if (platform.ios) {
+    // iPhone : pas de fenêtre d'installation possible, le bouton du menu explique le chemin.
+    check(await page.visible('#btn-install'), 'iPhone : le bouton « Installer l’application » est dans le menu');
+    await page.tapElement('#btn-install');
+    const installHint = await page.eval(`document.querySelector('#fullscreen-hint').textContent`);
+    check(installHint.includes('installer'), `iPhone : le bouton explique comment installer le jeu (texte : « ${installHint} »)`);
+    await page.screenshot(`${platform.name}-aide-installation-appli`);
+    await page.tapElement('#btn-fullscreen');
+    check(await page.visible('#fullscreen-hint'), 'iPhone : le bouton explique comment jouer en plein écran');
+    check((await page.eval(`document.querySelector('#fullscreen-hint').textContent`)).includes('écran d’accueil'), 'l’explication parle de l’écran d’accueil');
+    check((await page.eval('window.__fs.locks.length')) === 0, 'iPhone : le jeu ne tente pas de verrouiller l’orientation');
+    await page.screenshot(`${platform.name}-ecran-aide-installation`);
+
+    // Une partie en cours, puis le téléphone passe à la verticale : l'invitation s'affiche et la partie se met en pause.
+    await page.tapElement('#btn-start');
+    await page.waitFor('la partie', 'window.__game.state().state === "playing"', 5000);
+    await rotate(false);
+    await page.waitFor('l’invitation à tourner', `!document.querySelector('#overlay-rotate').classList.contains('hidden')`, 3000);
+    check((await state()) === 'paused', 'la partie se met en pause quand le téléphone passe à la verticale');
+    check(!(await page.visible('#btn-rotate-fullscreen')), 'iPhone : pas de bouton « Plein écran » dans l’invitation (impossible sur iPhone)');
+    await page.screenshot(`${platform.name}-tournez-le-telephone`);
+    await rotate(true);
+    await page.waitFor('la fermeture de l’invitation', `document.querySelector('#overlay-rotate').classList.contains('hidden')`, 3000);
+    check((await state()) === 'paused', 'tourner le téléphone ne relance pas la partie toute seule');
+    await page.tapElement('#btn-resume');
+    check((await state()) === 'playing', 'on reprend la partie à la main');
+
+    // « Jouer quand même à la verticale » (rotation verrouillée dans iOS) : l'invitation ne revient plus.
+    await rotate(false);
+    await page.waitFor('l’invitation à tourner', `!document.querySelector('#overlay-rotate').classList.contains('hidden')`, 3000);
+    await page.tapElement('#btn-rotate-skip');
+    check(!(await rotateShown()), 'refuser l’invitation la ferme');
+    await rotate(true);
+    await rotate(false);
+    await sleep(300);
+    check(!(await rotateShown()), 'l’invitation refusée ne revient pas à la rotation suivante');
+  } else {
+    // Android : le bouton d'installation n'apparaît que quand Chrome juge le jeu installable (événement beforeinstallprompt).
+    check(!(await page.visible('#btn-install')), 'Android : pas de bouton d’installation tant que Chrome ne propose rien');
+    await page.eval(`(() => {
+      window.__install = { prompted: 0 };
+      const event = new Event('beforeinstallprompt', { cancelable: true });
+      event.prompt = async () => { window.__install.prompted++; };
+      event.userChoice = Promise.resolve({ outcome: 'accepted' });
+      event.__fake = true;
+      window.__installEvent = event;
+      window.dispatchEvent(event);
+    })()`);
+    check(await page.eval('window.__installEvent.defaultPrevented'), 'la bannière automatique de Chrome est retenue pour être montrée au bon moment');
+    check(await page.visible('#btn-install'), 'Android : le bouton « Installer l’application » apparaît dans le menu');
+    await checkReachable(page, 'le bouton d’installation est atteignable au doigt', ['#btn-install']);
+    await page.screenshot(`${platform.name}-bouton-installer`);
+    await page.tapElement('#btn-install');
+    check((await page.eval('window.__install.prompted')) === 1, 'toucher le bouton ouvre la fenêtre d’installation de Chrome');
+    check(!(await page.visible('#btn-install')), 'le bouton disparaît une fois la proposition utilisée');
+    await page.eval(`window.dispatchEvent(new Event('appinstalled'))`);
+
+    // Le bouton du menu entre en plein écran et verrouille l'horizontal.
+    check((await page.eval(`document.querySelector('#btn-fullscreen').getAttribute('aria-pressed')`)) === 'false', 'le bouton plein écran n’est pas enfoncé au départ');
+    await page.tapElement('#btn-fullscreen');
+    await page.waitFor('le plein écran', `!!document.fullscreenElement`, 3000);
+    check((await page.eval('JSON.stringify(window.__fs.locks)')) === '["landscape"]', 'le plein écran verrouille l’horizontal');
+    check((await page.eval(`document.querySelector('#btn-fullscreen').getAttribute('aria-pressed')`)) === 'true', 'le bouton plein écran est enfoncé en plein écran');
+
+    // Le bouton du menu pause fait de même, et rend la main en sortant.
+    await page.tapElement('#btn-start');
+    await page.waitFor('la partie', 'window.__game.state().state === "playing"', 5000);
+    await page.tapElement('#btn-pause');
+    check((await page.eval(`document.querySelector('#btn-fullscreen-pause').textContent`)).includes('oui'), 'le menu pause indique « Plein écran : oui »');
+    await page.screenshot(`${platform.name}-pause-plein-ecran`);
+    await page.tapElement('#btn-fullscreen-pause');
+    await page.waitFor('la sortie du plein écran', `!document.fullscreenElement`, 3000);
+    check((await page.eval('window.__fs.unlocks')) >= 1, 'en sortant du plein écran, l’orientation est libérée');
+    check((await page.eval(`document.querySelector('#btn-fullscreen-pause').textContent`)).includes('non'), 'le menu pause indique « Plein écran : non »');
+
+    // À la verticale sur Android, hors plein écran : l'invitation s'affiche, avec un bouton « Plein écran » qui verrouille
+    // l'horizontal (l'appareil tourne alors tout seul, même si la rotation automatique est coupée).
+    await rotate(false);
+    await page.waitFor('l’invitation à tourner', `!document.querySelector('#overlay-rotate').classList.contains('hidden')`, 3000);
+    check(await rotateShown(), 'Android à la verticale : l’invitation à tourner s’affiche');
+    check(await page.visible('#btn-rotate-fullscreen'), 'Android : l’invitation propose « Plein écran »');
+    await page.screenshot(`${platform.name}-tournez-android`);
+    const locksBefore = await page.eval('window.__fs.locks.length');
+    await page.tapElement('#btn-rotate-fullscreen');
+    await page.waitFor('le plein écran', `!!document.fullscreenElement`, 3000);
+    check((await page.eval('window.__fs.locks.length')) === locksBefore + 1, 'le bouton « Plein écran » de l’invitation verrouille l’horizontal');
+    // L'appareil tourne : l'invitation disparaît toute seule.
+    await rotate(true);
+    await page.waitFor('la fermeture de l’invitation', `document.querySelector('#overlay-rotate').classList.contains('hidden')`, 3000);
+    check(!(await rotateShown()), 'une fois l’appareil à l’horizontale, l’invitation disparaît');
+  }
+  check(page.problems.length === 0, `aucune erreur ni avertissement dans la console${page.problems.length ? ' :\n' + page.problems.join('\n') : ''}`);
+  await page.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: shim.identifier });
+}
+
+/** Tablette : invitation à tourner à la verticale (bouton « Plein écran » seulement si le verrouillage existe), jamais à l'horizontale. */
+async function tabletScenario(page, url, tablet) {
+  const metrics = (landscape) =>
+    page.send('Emulation.setDeviceMetricsOverride', {
+      width: landscape ? tablet.height : tablet.width,
+      height: landscape ? tablet.width : tablet.height,
+      deviceScaleFactor: tablet.dpr,
+      mobile: true,
+      screenOrientation: landscape ? { type: 'landscapePrimary', angle: 90 } : { type: 'portraitPrimary', angle: 0 },
+    });
+  await page.send('Emulation.setUserAgentOverride', { userAgent: tablet.ua, platform: tablet.platform });
+  await metrics(false);
+  await page.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  const shim = await page.send('Page.addScriptToEvaluateOnNewDocument', { source: platformShims(tablet) });
+  await page.send('Page.navigate', { url: `${url}?debug` });
+  await page.waitFor('la page de jeu', `!!document.querySelector('#btn-start')`);
+  await page.eval('localStorage.clear()');
+  await page.send('Page.navigate', { url: `${url}?debug` });
+  await page.waitFor('le chargement des modèles', `!!window.__game && document.querySelector('#btn-start') && !document.querySelector('#btn-start').disabled`);
+  await sleep(500);
+
+  check(await page.visible('#overlay-rotate'), `${tablet.name} en vertical : l’invitation à tourner s’affiche`);
+  check((await page.visible('#btn-rotate-fullscreen')) === tablet.canLock, `${tablet.name} : le bouton « Plein écran » de l’invitation ${tablet.canLock ? 'est proposé (le verrouillage existe)' : 'est absent (pas de verrouillage possible)'}`);
+  await page.screenshot(`${tablet.name}-tournez-la-tablette`);
+
+  const closed = `document.querySelector('#overlay-rotate').classList.contains('hidden')`;
+  if (tablet.canLock) {
+    await page.tapElement('#btn-rotate-fullscreen');
+    await page.waitFor('le plein écran', `!!document.fullscreenElement`, 3000);
+    check((await page.eval('window.__fs.locks.length')) === 1, `${tablet.name} : « Plein écran » verrouille l’horizontal`);
+    await metrics(true);
+    await page.waitFor('la fermeture de l’invitation', closed, 3000);
+  } else {
+    // Rotation manuelle : à l'horizontale l'invitation disparaît ; revenue à la verticale, elle revient (rien n'a été refusé).
+    await metrics(true);
+    await page.waitFor('la fermeture de l’invitation', closed, 3000);
+    check(!(await page.visible('#overlay-rotate')), `${tablet.name} à l’horizontale : pas d’invitation`);
+    await metrics(false);
+    await page.waitFor('le retour de l’invitation', `!${closed}`, 3000);
+    // « Jouer quand même » : elle ne revient plus.
+    await dismissRotateInvitation(page, tablet.name);
+    await metrics(true);
+    await metrics(false);
+    await sleep(300);
+    check(!(await page.visible('#overlay-rotate')), `${tablet.name} : l’invitation refusée ne revient pas`);
+  }
+  check(page.problems.length === 0, `aucune erreur ni avertissement dans la console${page.problems.length ? ' :\n' + page.problems.join('\n') : ''}`);
+  await page.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: shim.identifier });
 }
 
 /** Les cadres (cartes, boutons, pastilles, barres...) dont le texte ne doit jamais dépasser. */
@@ -1203,6 +1540,7 @@ async function textScenario(page, url, size) {
   await page.eval('localStorage.clear()');
   await page.send('Page.navigate', { url: `${url}?debug` });
   await page.waitFor('le chargement des modèles', `!!window.__game && document.querySelector('#btn-start') && !document.querySelector('#btn-start').disabled`);
+  await dismissRotateInvitation(page, 'textes');
   await page.eval('window.__game.addGold(987654); window.__game.unlockAll(); window.__game.giveAmulets(3)');
   await sleep(600);
   const BADGES = [['.legend-badge', '.char-name'], ['.legend-badge', '.char-status'], ['.legend-badge', '.weapon-icon']];
@@ -1351,7 +1689,7 @@ async function main() {
     await page.send('Page.enable');
 
     const only = (process.argv.find((a) => a.startsWith('--only=')) ?? '').slice(7);
-    if (!only) {
+    if (!only || only === 'desktop') {
       for (const viewport of VIEWPORTS) {
         console.log(`\nFormat ${viewport.name} (${viewport.width}×${viewport.height})`);
         page.problems.length = 0;
@@ -1377,6 +1715,14 @@ async function main() {
         console.log(`\nPlateforme ${platform.name} (${platform.width}×${platform.height}, densité ${platform.dpr})`);
         page.problems.length = 0;
         await platformScenario(page, url, platform);
+        console.log('  Plein écran et orientation');
+        page.problems.length = 0;
+        await screenScenario(page, url, platform);
+      }
+      for (const tablet of TABLETS) {
+        console.log(`\nTablette ${tablet.name} (${tablet.width}×${tablet.height})`);
+        page.problems.length = 0;
+        await tabletScenario(page, url, tablet);
       }
     }
     ws.close();

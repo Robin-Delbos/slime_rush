@@ -169,6 +169,8 @@ export class Ui {
   private importButton = el<HTMLButtonElement>('btn-import');
   /** Sauvegarde lue dans le champ, en attente de confirmation avant d'écraser la progression. */
   private pendingImport: SaveData | null = null;
+  /** Dernières valeurs écrites dans le HUD (voir `changed`). */
+  private written = new Map<HTMLElement, Map<string, string | boolean>>();
   /** Animation de l'or du bilan de fin de partie en cours. */
   private rewardFrame = 0;
   /** Dernier texte écrit dans chaque élément du HUD (voir setText). */
@@ -946,7 +948,16 @@ private clearChestTimers(): void {
     this.startReveal(rewards);
   }
 
+  /**
+   * Un écran du menu cache la 3D (boutique, sauvegarde, crédits, ouverture des coffres) : inutile de la redessiner à fond.
+   * La collection n'en fait pas partie : elle montre le héros en 3D.
+   */
+  get sceneCovered(): boolean {
+    return [this.shop, this.saveScreen, this.credits, this.reveal].some((screen) => !screen.classList.contains('hidden'));
+  }
+
   showMenu(): void {
+    this.written.clear();
     this.lowHp.classList.remove('active');
     this.refresh();
     for (const node of [this.hud, this.shop, this.saveScreen, this.credits, this.collection, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
@@ -955,6 +966,7 @@ private clearChestTimers(): void {
   }
 
   showGame(): void {
+    this.written.clear();
     for (const node of [this.start, this.shop, this.saveScreen, this.credits, this.collection, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
     this.hud.classList.remove('hidden');
   }
@@ -973,19 +985,43 @@ private clearChestTimers(): void {
     node.textContent = text;
   }
 
+  /** Vrai si la valeur diffère de la dernière écrite pour cet élément et cette propriété (et la retient). */
+  private changed(node: HTMLElement, key: string, value: string | boolean): boolean {
+    let known = this.written.get(node);
+    if (!known) {
+      known = new Map();
+      this.written.set(node, known);
+    }
+    if (known.get(key) === value) return false;
+    known.set(key, value);
+    return true;
+  }
+
+  /** Classe ajoutée ou retirée seulement si l'état change : chaque écriture dans le DOM peut forcer un nouveau calcul de mise en page. */
+  private setClass(node: HTMLElement, name: string, on: boolean): void {
+    if (this.changed(node, `class:${name}`, on)) node.classList.toggle(name, on);
+  }
+
+  /** Largeur en pourcentage (ratio de 0 à 1), écrite seulement si elle change (au centième de pourcent : invisible à l'œil). */
+  private setWidth(node: HTMLElement, ratio: number): void {
+    const width = `${(ratio * 100).toFixed(2)}%`;
+    if (this.changed(node, 'width', width)) node.style.width = width;
+  }
+
   updateHud(hp: number, maxHp: number, xpRatio: number, level: number, time: number, kills: number, gold: number, charge: number): void {
     const ready = charge >= 1;
-    this.special.style.setProperty('--charge', `${Math.min(1, charge) * 360}deg`);
-    this.special.classList.toggle('ready', ready);
-    this.specialHint.classList.toggle('hidden', !ready);
-    this.lowHp.classList.toggle('active', hp / maxHp < 0.3 && hp > 0);
+    const charged = `${(Math.min(1, charge) * 360).toFixed(1)}deg`;
+    if (this.changed(this.special, 'charge', charged)) this.special.style.setProperty('--charge', charged);
+    this.setClass(this.special, 'ready', ready);
+    this.setClass(this.specialHint, 'hidden', !ready);
+    this.setClass(this.lowHp, 'active', hp / maxHp < 0.3 && hp > 0);
     const hpRatio = Math.max(0, Math.min(1, hp / maxHp));
-    this.hpFill.style.width = `${hpRatio * 100}%`;
+    this.setWidth(this.hpFill, hpRatio);
     // La traînée claire rattrape la barre avec retard : on voit ce qu'un coup vient de coûter.
-    this.hpGhost.style.width = `${hpRatio * 100}%`;
-    this.hpBar.classList.toggle('low', hpRatio < 0.3);
+    this.setWidth(this.hpGhost, hpRatio);
+    this.setClass(this.hpBar, 'low', hpRatio < 0.3);
     this.setText(this.hpLabel, `${Math.ceil(hp)} / ${maxHp}`);
-    this.xpFill.style.width = `${Math.min(1, xpRatio) * 100}%`;
+    this.setWidth(this.xpFill, Math.min(1, xpRatio));
     this.setText(this.level, `Niv. ${level}`);
     this.setText(this.timer, formatTime(time));
     this.setText(this.kills, `💀 ${kills}`);
@@ -1092,6 +1128,7 @@ private clearChestTimers(): void {
   }
 
   showGameOver(info: GameOverInfo): void {
+    this.written.clear();
     this.lowHp.classList.remove('active');
     const stats = el('gameover-stats');
     const reward = make('span', 'reward');
