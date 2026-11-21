@@ -208,9 +208,18 @@ async function scenario(page, url, viewport) {
   check(['Quaternius', 'CC0', 'Twemoji', 'CC BY 4.0', 'three.js', 'MIT', 'Créés pour le jeu'].every((word) => credits.includes(word)), 'les crédits citent les modèles, les icônes, le moteur 3D et leurs licences');
   check((await page.eval(`document.querySelector('#credits-three').textContent`)).includes('Permission is hereby granted'), 'le texte complet de la licence de three.js est dans le jeu');
   check(await page.eval(`[...document.querySelectorAll('#overlay-credits a')].length >= 4 && [...document.querySelectorAll('#overlay-credits a')].every((a) => a.target === '_blank' && a.rel.includes('noopener'))`), 'les liens des crédits s’ouvrent dans un nouvel onglet, sans accès à la page du jeu');
-  const privacy = await page.eval(`(() => { const a = document.querySelector('#credits-privacy'); return a ? a.getAttribute('href') : null; })()`);
-  check(privacy === './confidentialite.html', 'les crédits donnent accès à la politique de confidentialité');
-  check((await page.eval(`fetch(document.querySelector('#credits-privacy').href).then((r) => r.status + ' ' + r.headers.get('content-type'))`)).startsWith('200 text/html'), 'la page de confidentialité est bien servie avec le jeu');
+  // Un bouton et non un lien : dans l'application installée, un lien vers cette page (dans son champ) sortirait du jeu, et la
+  // fermer fermerait l'application. Elle s'ouvre donc dans le jeu, par-dessus les crédits.
+  check((await page.visible('#btn-privacy')) && (await page.eval(`document.querySelector('#btn-privacy').tagName`)) === 'BUTTON', 'les crédits donnent accès à la politique de confidentialité par un bouton, pas par un lien');
+  check((await page.eval(`fetch('./confidentialite.html').then((r) => r.status + ' ' + r.headers.get('content-type'))`)).startsWith('200 text/html'), 'la page de confidentialité est bien servie avec le jeu');
+  const homeUrl = await page.eval('location.href');
+  await page.click('#btn-privacy');
+  await page.waitFor('la politique de confidentialité', `(document.querySelector('#privacy-frame').contentDocument?.title ?? '').includes('confidentialité')`, 5000);
+  check((await page.visible('#overlay-privacy')) && (await page.eval('location.href')) === homeUrl && (await page.eval('!!window.__game')), 'la politique de confidentialité s’ouvre dans le jeu, sans quitter la page');
+  check((await page.eval(`document.querySelector('#privacy-frame').contentDocument.body.textContent`)).includes('ne collecte aucune donnée personnelle'), 'le texte de la politique de confidentialité est lisible dans le jeu');
+  await shot('0-confidentialite');
+  await page.click('#btn-privacy-back');
+  check(!(await page.visible('#overlay-privacy')) && (await page.visible('#overlay-credits')), 'fermer la politique de confidentialité ramène aux crédits, le jeu reste ouvert');
   check(!(await page.eval(`document.querySelector('#overlay-credits').textContent.includes('Robin') || [...document.querySelectorAll('#overlay-credits a')].some((a) => a.href.includes('Robin-Delbos'))`)), 'les crédits ne donnent ni nom de personne ni lien vers le dépôt');
   await shot('0-credits');
   await page.click('#btn-credits-back');
@@ -1402,6 +1411,172 @@ async function tabletScenario(page, url, tablet) {
   await page.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: shim.identifier });
 }
 
+/** Téléphones tenus à l'horizontale, du plus petit au plus grand : l'écran du menu doit y tenir sans défiler. */
+const FIT_SIZES = [
+  { name: 'iphone-se-paysage', width: 568, height: 320 },
+  { name: 'petit-paysage', width: 640, height: 360 },
+  { name: 'android-paysage', width: 740, height: 360 },
+  { name: 'iphone-paysage', width: 667, height: 375 },
+  { name: 'tel-paysage', width: 844, height: 390 },
+  { name: 'pixel-paysage', width: 915, height: 412 },
+];
+
+/** Hauteur de contenu et hauteur visible d'un écran : si la première dépasse la seconde, une barre de défilement apparaît. */
+function scrollOf(page, selector) {
+  return page.eval(`(() => {
+    const o = document.querySelector(${JSON.stringify(selector)});
+    const h = (s) => { const e = o.querySelector(s); return e ? Math.round(e.getBoundingClientRect().height) : 0; };
+    return { content: o.scrollHeight, visible: o.clientHeight, hasBar: o.scrollHeight > o.clientHeight + 1, parts: { logo: h('.logo'), info: h('.menu-info'), weapons: h('#weapons'), desc: h('#weapon-desc'), diff: h('#difficulty'), actions: h('.main-actions'), foot: h('.menu-foot') } };
+  })()`);
+}
+
+/**
+ * Téléphone à l'horizontale : le menu principal tient dans l'écran sans barre de défilement, même dans le pire cas
+ * (cinq armes, lien d'installation affiché), ainsi que l'onglet Coffres de la boutique, l'onglet Héros de la collection
+ * (avec un héros à acheter regardé), la pause, le choix de niveau et la fin de partie.
+ */
+async function fitScenario(page, url, size) {
+  const shot = (name) => page.screenshot(`tient-${size.name}-${name}`);
+  await setDevice(page, size.width, size.height);
+  await page.send('Page.navigate', { url: `${url}?debug` });
+  await page.waitFor('la page de jeu', `!!document.querySelector('#btn-start')`);
+  await page.eval('localStorage.clear()');
+  await page.send('Page.navigate', { url: `${url}?debug` });
+  await page.waitFor('le chargement des modèles', `!!window.__game && document.querySelector('#btn-start') && !document.querySelector('#btn-start').disabled`);
+  await sleep(500);
+  const report = (label, m) => `${label} : tout tient sans défiler (contenu ${m.content} px pour ${m.visible} px visibles ; logo ${m.parts.logo}, pastilles ${m.parts.info}, armes ${m.parts.weapons}, texte ${m.parts.desc}, difficultés ${m.parts.diff}, boutons ${m.parts.actions}, pied ${m.parts.foot})`;
+
+  // Pire cas : le lien d'installation s'affiche (Chrome vient de juger le jeu installable).
+  await page.eval(`(() => { const e = new Event('beforeinstallprompt', { cancelable: true }); e.prompt = async () => {}; e.userChoice = Promise.resolve({ outcome: 'dismissed' }); window.dispatchEvent(e); })()`);
+  await page.eval('document.querySelector("#overlay-start").scrollTo(0, 0)');
+  const four = await scrollOf(page, '#overlay-start');
+  check(!four.hasBar, report('menu à quatre armes', four));
+  await shot('1-menu');
+
+  // Politique de confidentialité, dans le jeu (pas une page à part, qui sortirait du jeu dans l'application installée) : sur le plus
+  // petit écran, le texte garde de la place et le bouton Retour reste atteignable.
+  await page.click('#btn-credits');
+  await page.click('#btn-privacy');
+  await page.waitFor('la politique de confidentialité', `(document.querySelector('#privacy-frame').contentDocument?.title ?? '').includes('confidentialité')`, 5000);
+  const frameHeight = await page.eval(`Math.round(document.querySelector('#privacy-frame').getBoundingClientRect().height)`);
+  check(frameHeight >= 150, `politique de confidentialité : le texte garde de la place à l’écran (${frameHeight} px de haut)`);
+  check((await page.reachable('#btn-privacy-back')) === 'ok', 'politique de confidentialité : le bouton Retour est atteignable au doigt');
+  await shot('0-confidentialite');
+  await page.click('#btn-privacy-back');
+  check(!(await page.visible('#overlay-privacy')) && (await page.visible('#overlay-credits')), 'fermer la politique de confidentialité ramène aux crédits');
+  check((await page.reachable('#btn-credits-back')) === 'ok', 'crédits : le bouton Retour est atteignable au doigt');
+  await page.click('#btn-credits-back');
+
+  // Boutique, onglet Coffres : le tableau des coffres tient sans défiler.
+  await page.click('#btn-shop');
+  await page.click('#tab-chests');
+  await sleep(500);
+  const chests = await scrollOf(page, '#overlay-shop');
+  check(!chests.hasBar, `boutique, onglet Coffres : tout tient sans défiler (contenu ${chests.content} px pour ${chests.visible} px visibles)`);
+  const tabsTopOf = (overlay) => page.eval(`(() => { const r = document.querySelector('${overlay} .tabs').getBoundingClientRect(); const t = document.querySelector('${overlay} > h2').getBoundingClientRect(); return [Math.round(t.top), Math.round(r.top)]; })()`);
+  const shopChestsTabs = await tabsTopOf('#overlay-shop');
+  await shot('5-boutique-coffres');
+  // Le message sous les offres (« Pas assez de pièces. », affiché si l'ouverture échoue) ajoute une ligne : il ne doit pas faire défiler.
+  await page.eval(`(() => { const status = document.querySelector('#chest-status'); status.textContent = 'Pas assez de pièces.'; status.classList.add('error'); })()`);
+  await sleep(300);
+  const chestsMessage = await scrollOf(page, '#overlay-shop');
+  check(!chestsMessage.hasBar, `boutique, onglet Coffres avec un message : tout tient sans défiler (contenu ${chestsMessage.content} px pour ${chestsMessage.visible} px visibles)`);
+  await shot('5b-boutique-coffres-message');
+  await page.eval(`(() => { const status = document.querySelector('#chest-status'); status.textContent = ''; status.classList.remove('error'); })()`);
+  await page.click('#btn-shop-back');
+  await sleep(200);
+
+  // Collection, onglet Héros, avec un héros à acheter regardé (le bouton « Acheter » est affiché : le pire cas).
+  await page.click('#btn-collection');
+  await sleep(400);
+  await page.click('.char-card.locked');
+  await sleep(500);
+  const heroes = await scrollOf(page, '#overlay-collection');
+  check(!heroes.hasBar, `collection, onglet Héros : tout tient sans défiler (contenu ${heroes.content} px pour ${heroes.visible} px visibles)`);
+  const edge = await page.eval(`(() => {
+    const parts = [...document.querySelectorAll('#overlay-collection > h2, #overlay-collection .tabs, #overlay-collection #hero-desc, #overlay-collection #btn-buy-hero:not(.hidden), #overlay-collection #characters .char-card, #overlay-collection > .btn')].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0);
+    return { limit: innerWidth * 0.52, left: Math.min(...parts.map((r) => r.left)) };
+  })()`);
+  check(edge.left >= edge.limit - 0.5, `collection, onglet Héros : le texte et les cadres commencent après le dégradé (à ${Math.round(edge.left)} px, dégradé fini à ${Math.round(edge.limit)} px)`);
+  const heroesTabs = await tabsTopOf('#overlay-collection');
+  await shot('6-collection-heros');
+  await page.click('#btn-collection-back');
+  await sleep(200);
+
+  // Les listes, dans leur pire cas : tout débloqué, amulettes en réserve.
+  await page.eval('window.__game.unlockAll(); window.__game.giveAmulets(3)');
+  await sleep(300);
+  const listAt = async (label, open, panel, mustFit = true) => {
+    for (const action of open) await page.click(action);
+    await sleep(500);
+    const m = await scrollOf(page, panel);
+    if (mustFit) check(!m.hasBar, `${label} : tout tient sans défiler (contenu ${m.content} px pour ${m.visible} px visibles)`);
+  };
+  await listAt('boutique, onglet Améliorations', ['#btn-shop', '#tab-upgrades'], '#overlay-shop');
+  const shopUpgradesTabs = await tabsTopOf('#overlay-shop');
+  check(shopUpgradesTabs.join() === shopChestsTabs.join(), `boutique : le titre et les onglets ne bougent pas d'un onglet à l'autre (Coffres ${shopChestsTabs.join(' / ')} px, Améliorations ${shopUpgradesTabs.join(' / ')} px)`);
+  await shot('7-boutique-ameliorations');
+  await page.click('#btn-shop-back');
+  await listAt('collection, onglet Apparences', ['#btn-collection', '#tab-styles'], '#overlay-collection');
+  const stylesTabs = await tabsTopOf('#overlay-collection');
+  check(stylesTabs.join() === heroesTabs.join(), `collection : le titre et les onglets ne bougent pas d'un onglet à l'autre (Héros ${heroesTabs.join(' / ')} px, Apparences ${stylesTabs.join(' / ')} px)`);
+  await shot('8-apparences');
+  // Six types d'amulettes en réserve (le pire cas) : ils tiennent dès 360 px de haut ; sur 320 px (iPhone SE ancien), la liste défile un peu.
+  await listAt('collection, onglet Amulettes (six types en réserve)', ['#tab-amulets'], '#overlay-collection', size.height >= 360);
+  // Une amulette équipée : sa rangée (avec − / + / Retirer) remplace la ligne « Aucune » en haut. Le titre et la rangée sont sur
+  // une même ligne pour que l'écran ne grandisse pas : il tient dès 360 px de haut, comme avant d'équiper.
+  await listAt('collection, onglet Amulettes (une équipée, cinq en réserve)', ['#amulets-body .amulet-toggle'], '#overlay-collection', size.height >= 360);
+  const amuletsTabs = await tabsTopOf('#overlay-collection');
+  check(amuletsTabs.join() === heroesTabs.join(), `collection : le titre et les onglets ne bougent pas non plus sur l'onglet Amulettes (${amuletsTabs.join(' / ')} px)`);
+  await shot('9-amulettes');
+  await page.click('#btn-collection-back');
+  await listAt('sauvegarde', ['#btn-save'], '#overlay-save');
+  await shot('10-sauvegarde');
+  await page.click('#btn-import');
+  await sleep(300);
+  const saveMessage = await scrollOf(page, '#overlay-save');
+  check(!saveMessage.hasBar, `sauvegarde avec un message de statut : tout tient sans défiler (contenu ${saveMessage.content} px pour ${saveMessage.visible} px visibles)`);
+  await shot('10b-sauvegarde-message');
+  await page.click('#btn-save-back');
+  await sleep(200);
+
+  // Cinq armes (l'arme secrète trouvée) : la rangée doit toujours tenir sur une ligne et dans l'écran.
+  await page.eval('window.__game.unlockAll()');
+  await sleep(300);
+  const five = await scrollOf(page, '#overlay-start');
+  check(!five.hasBar, report('menu à cinq armes', five));
+  await shot('2-menu-5-armes');
+  await checkWeaponAlignment(page, `${size.name} : menu à cinq armes`);
+
+  // En partie : pause, choix de niveau et fin de partie.
+  await page.click('#btn-start');
+  await page.waitFor('la partie', 'window.__game.state().state === "playing"', 5000);
+  await page.click('#btn-pause');
+  await sleep(300);
+  const pause = await scrollOf(page, '#overlay-pause');
+  check(!pause.hasBar, `pause : tout tient sans défiler (contenu ${pause.content} px pour ${pause.visible} px visibles)`);
+  await shot('3-pause');
+  await page.click('#btn-resume');
+  await page.eval('window.__game.levelUp()');
+  await page.waitFor('les cartes de niveau', `!document.querySelector('#overlay-levelup').classList.contains('hidden')`, 5000);
+  await sleep(900);
+  const levelUp = await scrollOf(page, '#overlay-levelup');
+  check(!levelUp.hasBar, `choix de niveau : tout tient sans défiler (contenu ${levelUp.content} px pour ${levelUp.visible} px visibles)`);
+  await shot('4-niveau');
+  await page.click('#cards .card');
+  await page.eval('window.__game.kill()');
+  const over = `!document.querySelector('#overlay-gameover').classList.contains('hidden')`;
+  const deadline = Date.now() + 15000;
+  while (!(await page.eval(over)) && Date.now() < deadline) {
+    await page.click('#overlay-levelup:not(.hidden) .card');
+    await sleep(150);
+  }
+  await sleep(1500);
+  const gameOver = await scrollOf(page, '#overlay-gameover');
+  check(!gameOver.hasBar, `fin de partie : tout tient sans défiler (contenu ${gameOver.content} px pour ${gameOver.visible} px visibles)`);
+  await shot('5-fin');
+}
+
 /** Les cadres (cartes, boutons, pastilles, barres...) dont le texte ne doit jamais dépasser. */
 const TEXT_FRAMES = '.odds, .info-btn, .credit, .menu-foot, .weapon-card, .diff-btn, .char-card, .side-btn, .btn, .tab, .pill, .shop-row, .swatch, .amulet-row, .card, .reveal-mini, .reveal-card, .bar, .collection-section, .save-box, #banner, .boss-bar, .stats';
 
@@ -1701,6 +1876,13 @@ async function main() {
         console.log(`\nTéléphone ${device.name} (${device.width}×${device.height}), puis pivoté`);
         page.problems.length = 0;
         await orientationScenario(page, url, device);
+      }
+    }
+    if (!only || only === 'fit') {
+      for (const size of FIT_SIZES) {
+        console.log(`\nÀ l'horizontale, sans défilement : ${size.name} (${size.width}×${size.height})`);
+        page.problems.length = 0;
+        await fitScenario(page, url, size);
       }
     }
     if (!only || only === 'texts') {

@@ -212,8 +212,15 @@
           <summary>Licence de three.js (MIT)</summary>
           <pre id="credits-three"></pre>
         </details>
-        <p class="hint"><a id="credits-privacy" href="./confidentialite.html" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a></p>
+        <!-- Un bouton, pas un lien : dans l'application installée, un lien vers cette page (dans le champ de l'application)
+             sortirait du jeu, et la fermer fermerait l'application. Elle s'ouvre donc ici, dans le jeu (voir src/ui.ts). -->
+        <p class="hint"><button id="btn-privacy" class="link-btn privacy-link">Politique de confidentialité</button></p>
         <button id="btn-credits-back" class="btn btn-alt">Retour</button>
+      </div>
+
+      <div id="overlay-privacy" class="overlay hidden">
+        <iframe id="privacy-frame" title="Politique de confidentialité" data-src="./confidentialite.html"></iframe>
+        <button id="btn-privacy-back" class="btn btn-small btn-alt">Retour</button>
       </div>
 
       <div id="overlay-collection" class="overlay hidden" data-tab="heroes">

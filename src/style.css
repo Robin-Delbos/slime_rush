@@ -865,7 +865,8 @@ h2 {
 /* À l'horizontale : le héros à gauche, tout le reste à droite. */
 @media (orientation: landscape) {
   #overlay-collection[data-tab='heroes'] {
-    padding-left: 50%;
+    /* Le dégradé qui relie l'aperçu du héros au fond bleu finit à 52 % : le texte et les cadres commencent après, pas dessus. */
+    padding-left: calc(52% + 8px);
     background: linear-gradient(90deg, rgba(20, 24, 64, 0) 0, rgba(20, 24, 64, 0) 44%, rgba(20, 24, 64, 0.94) 52%);
   }
 
@@ -2883,4 +2884,641 @@ html[data-device='mobile'] #overlay-gameover {
 
 #perf:empty {
   display: none;
+}
+
+/* ---------- Politique de confidentialité, dans le jeu ---------- */
+
+/* Fond opaque : les crédits, restés ouverts dessous, ne doivent pas transparaître. */
+#overlay-privacy {
+  justify-content: flex-start;
+  gap: 8px;
+  padding: calc(8px + env(safe-area-inset-top)) 10px calc(8px + env(safe-area-inset-bottom));
+  background: #14202a;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  overflow: hidden;
+}
+
+#privacy-frame {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  max-width: 760px;
+  border: 0;
+  border-radius: 12px;
+  background: #f4fbff;
+}
+
+.privacy-link {
+  font-size: 14px;
+}
+
+/* ---------- Menu à l'horizontale sur téléphone : tout tient dans l'écran, sans défiler ---------- */
+
+/* La hauteur est rare (320 à 430 px) et la largeur abondante : le logo passe à gauche des pastilles, les armes, leur
+   description, les difficultés et les boutons se serrent, et le pied de menu (version, crédits, installation) reste tout en bas.
+   Le menu tient en environ 290 px au lieu de 460. Les deux colonnes du haut (menu-top) et du bas (menu-bottom) sont dissoutes
+   (display: contents) pour que le logo et les pastilles se placent côte à côte. La rangée vide et souple (2) est l'endroit
+   où se voit le héros quand l'écran est assez haut. */
+@media (orientation: landscape) and (max-height: 480px) {
+  .overlay.menu {
+    display: grid;
+    grid-template-columns: 1fr auto auto 1fr;
+    grid-template-rows: auto 1fr auto auto auto auto auto;
+    column-gap: 12px;
+    row-gap: 4px;
+    align-items: center;
+    padding: calc(6px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom))
+      calc(12px + env(safe-area-inset-left));
+  }
+
+  .overlay.menu .menu-top,
+  .overlay.menu .menu-bottom {
+    display: contents;
+  }
+
+  .overlay.menu .logo {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .overlay.menu .logo svg {
+    width: 150px;
+  }
+
+  .overlay.menu .menu-info {
+    grid-column: 3;
+    grid-row: 1;
+    justify-content: flex-start;
+  }
+
+  .overlay.menu #weapons {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    justify-self: center;
+  }
+
+  .overlay.menu .loadout-desc {
+    grid-column: 1 / -1;
+    grid-row: 4;
+    justify-self: center;
+    min-height: 0;
+    font-size: 12px;
+    line-height: 1.25;
+  }
+
+  .overlay.menu #difficulty {
+    grid-column: 1 / -1;
+    grid-row: 5;
+    justify-self: center;
+    gap: 5px;
+  }
+
+  .overlay.menu .main-actions {
+    grid-column: 1 / -1;
+    grid-row: 6;
+    justify-self: center;
+    gap: 8px;
+  }
+
+  /* Pied de menu : version, crédits et installation, tout en bas de l'écran. */
+  .overlay.menu .menu-foot {
+    grid-column: 1 / -1;
+    grid-row: 7;
+    justify-self: center;
+  }
+
+  /* Cartes d'armes : une icône plus petite, le nom sur une seule ligne, moins d'espace autour. */
+  #weapons .weapon-card {
+    --icon: clamp(22px, calc(var(--w) * 0.3), 30px);
+    padding: 4px clamp(2px, calc(var(--w) * 0.05), 5px);
+    grid-template-rows: calc(var(--icon) + 2px) 1.3em auto;
+    gap: 2px;
+    border-width: 2px;
+    border-radius: 12px;
+  }
+
+  #weapons .weapon-icon {
+    height: calc(var(--icon) + 2px);
+  }
+
+  #weapons .char-name {
+    font-size: clamp(8.5px, calc((var(--w) - 14px) / 5.5), 12px);
+    white-space: nowrap;
+  }
+
+  #weapons .char-status {
+    font-size: clamp(8.5px, calc((var(--w) - 14px) / 5), 11.5px);
+  }
+
+  .diff-btn {
+    padding: 2px 4px;
+    border-width: 2px;
+    border-radius: 11px;
+  }
+
+  .diff-name {
+    font-size: clamp(10px, 3.3vw, 12.5px);
+  }
+
+  .diff-gold {
+    font-size: 10.5px;
+    line-height: 1.15;
+  }
+
+  /* Boutique et Collection : icône et nom côte à côte, pour moins de hauteur. */
+  .main-actions .side-btn {
+    flex-direction: row;
+    gap: 6px;
+    min-width: 0;
+    padding: 3px 10px;
+    border-width: 2px;
+    border-radius: 14px;
+  }
+
+  .main-actions .side-icon {
+    font-size: 20px;
+  }
+
+  .main-actions .btn {
+    font-size: 17px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+}
+
+/* ---------- Pause et choix de niveau à l'horizontale sur téléphone : tout tient dans l'écran, sans défiler ---------- */
+
+@media (orientation: landscape) and (max-height: 480px) {
+  #overlay-pause,
+  #overlay-levelup {
+    gap: 6px;
+  }
+
+  #overlay-pause h2,
+  #overlay-levelup h2 {
+    font-size: 26px;
+  }
+
+  /* Pause : les trois réglages (son, musique, plein écran) sur une seule ligne, des boutons un peu plus petits. */
+  #overlay-pause .menu-actions {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  #overlay-pause .btn-small {
+    padding: 6px 10px;
+    font-size: 14px;
+  }
+
+  #overlay-pause .hint,
+  #overlay-levelup .hint {
+    font-size: 12.5px;
+    line-height: 1.3;
+  }
+
+  /* Choix de niveau : les trois cartes côte à côte, plus compactes, au lieu de passer sur deux rangées. */
+  #cards {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .card {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 230px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 3px;
+    padding: 14px 8px 10px;
+    border-width: 3px;
+    border-radius: 14px;
+  }
+
+  .card-icon {
+    font-size: 34px;
+  }
+
+  .card-icon svg {
+    width: 40px;
+    height: 40px;
+  }
+
+  .card-name {
+    font-size: 15px;
+  }
+
+  .card-desc {
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .card-level {
+    font-size: 11px;
+  }
+}
+
+/* ---------- Boutique (onglet Coffres) et collection (onglet Héros) à l'horizontale sur téléphone ---------- */
+
+/* Titre plus petit (il faisait 60 px), onglets et bouton « Retour » resserrés. Les listes (améliorations, apparences,
+   amulettes) défilent par nature ; les onglets Coffres et Héros, eux, tiennent dans l'écran sans barre de défilement. */
+@media (orientation: landscape) and (max-height: 480px) {
+  #overlay-shop,
+  #overlay-collection {
+    gap: 3px;
+    padding-top: calc(5px + env(safe-area-inset-top));
+    padding-bottom: calc(7px + env(safe-area-inset-bottom));
+  }
+
+  #overlay-shop h2,
+  #overlay-collection h2 {
+    font-size: 22px;
+    line-height: 1.1;
+  }
+
+  #overlay-shop .tab,
+  #overlay-collection .tab {
+    padding: 3px 6px;
+    font-size: 13px;
+    border-width: 2px;
+    border-radius: 11px;
+  }
+
+  #overlay-shop > .btn,
+  #overlay-collection > .btn {
+    font-size: 16px;
+    padding: 5px 24px;
+  }
+
+  /* Coffres : une seule colonne centrée, comme le reste de l'écran (le coffre, le texte, les deux offres, le résultat), serrée
+     sous les onglets (le contenu ne s'étire pas sur la hauteur de l'écran). Le titre et les onglets restent à la même place d'un
+     onglet à l'autre. Le coffre est un peu plus petit qu'en portrait pour que tout tienne sur 320 px. */
+  #panel-chests {
+    gap: 4px;
+    max-width: 640px;
+  }
+
+  #panel-chests .chest-preview {
+    width: 90px;
+    height: 86px;
+    margin: 2px 0;
+    transform: none;
+    animation: preview-bob-small 2.4s ease-in-out infinite;
+  }
+
+  #panel-chests .hint {
+    font-size: 13px;
+    line-height: 1.3;
+  }
+
+  #panel-chests .btn-small {
+    padding: 6px 12px;
+    font-size: 14px;
+  }
+
+  #chest-status {
+    min-height: 0;
+    font-size: 13px;
+  }
+
+  /* Héros : cartes plus basses (nom et statut serrés), bouton « Acheter » et description plus petits. */
+  #overlay-collection[data-tab='heroes'] #hero-desc {
+    min-height: 0;
+    font-size: 11px;
+    line-height: 1.25;
+  }
+
+  #overlay-collection[data-tab='heroes'] #btn-buy-hero {
+    font-size: 12px;
+    padding: 3px 12px;
+  }
+
+  #overlay-collection[data-tab='heroes'] .tab {
+    padding: 3px 4px;
+    font-size: 12px;
+  }
+
+  #characters {
+    gap: 3px;
+    max-width: none;
+  }
+
+  #characters .char-card {
+    padding: 2px 2px;
+    gap: 0;
+    border-width: 2px;
+    border-radius: 9px;
+  }
+
+  #characters .char-name {
+    font-size: 11px;
+    line-height: 1.15;
+  }
+
+  #characters .char-status {
+    font-size: 10px;
+    line-height: 1.15;
+  }
+}
+
+/* Le coffre de la boutique se balance, comme en portrait, mais à sa taille réduite de l'écran à l'horizontale. */
+@keyframes preview-bob-small {
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #panel-chests .chest-preview {
+    animation: none;
+  }
+}
+
+/* Écran assez large : quatre cartes par rangée (deux rangées pour huit héros) au lieu de trois. */
+@media (orientation: landscape) and (max-height: 480px) and (min-width: 640px) {
+  #characters {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* ---------- Listes à l'horizontale sur téléphone : améliorations, apparences, amulettes, sauvegarde ---------- */
+
+/* Mêmes informations, mais sur plusieurs colonnes (la largeur ne manque pas, la hauteur oui) : moins de défilement. */
+@media (orientation: landscape) and (max-height: 480px) {
+  #panel-upgrades,
+  #panel-styles,
+  #panel-amulets {
+    max-width: 760px;
+    gap: 4px;
+  }
+
+  #panel-upgrades .hint,
+  #panel-styles > .hint,
+  #panel-amulets > .hint {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.25;
+  }
+
+  /* Boutique : les pièces en haut à droite, au lieu d'une ligne à elles seules. */
+  #overlay-shop #shop-gold {
+    position: absolute;
+    top: calc(8px + env(safe-area-inset-top));
+    right: calc(14px + env(safe-area-inset-right));
+  }
+
+  /* Améliorations : deux colonnes de lignes plus basses. */
+  #shop-items {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+    max-width: none;
+  }
+
+  .shop-row {
+    padding: 3px 7px;
+    gap: 6px;
+    border-radius: 10px;
+  }
+
+  .shop-icon {
+    width: 26px;
+    font-size: 20px;
+  }
+
+  .shop-name {
+    font-size: 13px;
+    line-height: 1.15;
+  }
+
+  .shop-level {
+    font-size: 11px;
+  }
+
+  .shop-desc {
+    font-size: 11px;
+    line-height: 1.15;
+  }
+
+  .shop-buy {
+    min-width: 50px;
+    padding: 3px 6px;
+    border-width: 2px;
+    border-radius: 10px;
+    box-shadow: 0 3px 0 #b97712;
+    font-size: 12px;
+  }
+
+  /* Apparences : une colonne par catégorie (projectiles, traînées, poussière), pastilles plus petites. */
+  #styles-body {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 6px;
+    max-width: none;
+  }
+
+  #styles-body .collection-section {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .collection-section {
+    gap: 4px;
+    padding: 6px 8px;
+    border-radius: 11px;
+  }
+
+  .collection-section .section-title {
+    font-size: 14px;
+  }
+
+  .collection-section .hint {
+    font-size: 11px;
+    line-height: 1.15;
+  }
+
+  .swatches {
+    gap: 3px;
+  }
+
+  .swatch {
+    gap: 4px;
+    padding: 1px 6px 1px 3px;
+    border-width: 2px;
+    border-radius: 10px;
+    font-size: 11px;
+  }
+
+  .swatch-dot {
+    width: 14px;
+    height: 14px;
+    border-width: 1.5px;
+  }
+
+  /* Amulettes : la réserve sur deux colonnes, l'icône, le texte et les boutons sur une seule ligne. */
+  #amulets-body {
+    gap: 6px;
+    max-width: none;
+  }
+
+  #amulets-body .collection-section:not(.equipped-section) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  #amulets-body .collection-section:not(.equipped-section) > :is(.section-title, .hint) {
+    grid-column: 1 / -1;
+  }
+
+  #amulets-body .collection-section {
+    padding: 4px 8px;
+  }
+
+  /* Amulette équipée : le titre à gauche et sa rangée (ou « Aucune… ») à droite, sur la même ligne : équiper une amulette
+     ne fait plus grandir l'écran d'une ligne de plus. */
+  #amulets-body .equipped-section {
+    display: grid;
+    grid-template-columns: minmax(90px, 140px) minmax(0, 1fr);
+    align-items: center;
+    column-gap: 10px;
+    border-width: 2px;
+  }
+
+  #amulets-body .equipped-section > .section-title {
+    grid-column: 1;
+    line-height: 1.15;
+  }
+
+  #amulets-body .equipped-section > :not(.section-title) {
+    grid-column: 2;
+  }
+
+  .amulet-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 4px 7px;
+    padding: 2px 7px;
+    border-width: 2px;
+    border-radius: 12px;
+  }
+
+  .amulet-icon svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .amulet-name {
+    font-size: 13px;
+    line-height: 1.15;
+  }
+
+  .amulet-desc {
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  .amulet-actions {
+    grid-column: auto;
+    flex-wrap: nowrap;
+  }
+
+  .amulet-toggle,
+  .step-btn {
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 11.5px;
+  }
+
+  .step-btn {
+    min-width: 26px;
+    padding: 3px 6px;
+  }
+
+  /* Sauvegarde : exporter et importer côte à côte. */
+  #overlay-save {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: center;
+    align-items: stretch;
+    column-gap: 10px;
+    row-gap: 4px;
+  }
+
+  #overlay-save > h2,
+  #overlay-save > p,
+  #overlay-save > .btn {
+    grid-column: 1 / -1;
+    justify-self: center;
+  }
+
+  #overlay-save > h2 {
+    font-size: 24px;
+    line-height: 1.1;
+  }
+
+  #overlay-save > .hint {
+    font-size: 12px;
+    line-height: 1.25;
+  }
+
+  #overlay-save .save-box {
+    max-width: none;
+    gap: 6px;
+    padding: 8px;
+    justify-content: center;
+  }
+
+  #overlay-save .save-box h3 {
+    font-size: 15px;
+  }
+
+  #overlay-save #save-code {
+    height: 48px;
+    padding: 5px 8px;
+    font-size: 12px;
+    line-height: 1.3;
+  }
+
+  #overlay-save .btn-small {
+    padding: 5px 10px;
+    font-size: 13px;
+  }
+
+  #overlay-save > .btn {
+    font-size: 16px;
+    padding: 5px 24px;
+  }
+
+  #save-status {
+    min-height: 0;
+  }
+}
+
+/* ---------- Marge sous le bouton « Retour » à l'horizontale sur téléphone ---------- */
+
+/* Le bouton a une ombre de 6 px qui déborde de sa boîte : sans marge il paraît collé au bas de l'écran. La marge grandit avec la
+   hauteur de l'écran : nulle à 360 px et en dessous (là où les écrans tiennent tout juste), puis +0,6 px par pixel de hauteur en
+   plus, jusqu'à 16 px. Comme elle croît moins vite que la place gagnée, elle ne peut pas faire déborder un écran qui tenait. */
+@media (orientation: landscape) and (max-height: 480px) {
+  #overlay-shop,
+  #overlay-collection {
+    padding-bottom: calc(clamp(7px, calc(7px + (100vh - 360px) * 0.6), 16px) + env(safe-area-inset-bottom));
+  }
+
+  #overlay-save {
+    padding-bottom: calc(clamp(10px, calc(10px + (100vh - 360px) * 0.6), 16px) + env(safe-area-inset-bottom));
+  }
+
+  /* Crédits (liste qui défile) et politique de confidentialité : de la place, on en prend. */
+  #overlay-credits {
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+
+  #overlay-privacy {
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  }
 }

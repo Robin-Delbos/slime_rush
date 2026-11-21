@@ -236,6 +236,21 @@ export class Ui {
       this.credits.classList.add('hidden');
       this.updateCover();
     });
+
+    // Politique de confidentialité : affichée dans le jeu, par-dessus les crédits (qui restent ouverts dessous). Un lien vers
+    // sa page, dans l'application installée, la ferait s'ouvrir hors du jeu ; la fermer fermerait alors l'application.
+    const privacy = el('overlay-privacy');
+    const frame = el<HTMLIFrameElement>('privacy-frame');
+    el('btn-privacy').addEventListener('click', () => {
+      handlers.onNavigate();
+      // Chargée à la première ouverture seulement.
+      if (!frame.getAttribute('src')) frame.src = frame.dataset.src ?? './confidentialite.html';
+      privacy.classList.remove('hidden');
+    });
+    el('btn-privacy-back').addEventListener('click', () => {
+      handlers.onNavigate();
+      privacy.classList.add('hidden');
+    });
   }
 
   /** Probabilités du contenu des coffres, visibles avant tout achat (« Probabilités du contenu » dans l'onglet Coffres). */

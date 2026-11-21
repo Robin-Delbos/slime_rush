@@ -2,7 +2,7 @@
   "name": "slime-rush",
   "private": true,
   "license": "UNLICENSED",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,6 +14,7 @@
     "test:e2e": "vite build && node tests/e2e/run.mjs",
     "test:e2e:mobile": "vite build && node tests/e2e/run.mjs --only=orientation",
     "test:e2e:texts": "vite build && node tests/e2e/run.mjs --only=texts",
+    "test:e2e:fit": "vite build && node tests/e2e/run.mjs --only=fit",
     "test:e2e:platforms": "vite build && node tests/e2e/run.mjs --only=platforms",
     "test:all": "tsc --noEmit && vitest run && npm run test:e2e"
   },
