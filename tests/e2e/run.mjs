@@ -878,6 +878,17 @@ async function orientationScenario(page, url, device) {
   check((await page.game()).amulet === 'sage', 'l’amulette est équipée');
   await page.tapElement('.amulet-row.equipped .amulet-actions button:nth-child(2)');
   check((await page.text('.amulet-row.equipped .amulet-desc')).includes('Niveau 2'), 'on peut renforcer l’amulette avec un second exemplaire');
+  // « − » baisse le niveau, et au niveau 1 (un seul exemplaire équipé) il retire l'amulette, comme « Retirer ».
+  await page.tapElement('.amulet-row.equipped .step-btn:nth-child(1)');
+  check((await page.text('.amulet-row.equipped .amulet-desc')).includes('Niveau 1') && (await page.game()).amulet === 'sage', 'le bouton « − » baisse l’amulette au niveau 1');
+  check(await page.eval(`!document.querySelector('.amulet-row.equipped .step-btn:nth-child(1)').disabled`), 'au niveau 1, le bouton « − » n’est pas grisé : il retire l’amulette');
+  await page.tapElement('.amulet-row.equipped .step-btn:nth-child(1)');
+  check((await page.game()).amulet === '' && !(await page.eval(`!!document.querySelector('.amulet-row.equipped')`)), '« − » au niveau 1 retire l’amulette, comme « Retirer »');
+  check((await page.game()).amulets.sage === 3, 'retirer l’amulette ne consomme aucun exemplaire');
+  // On la rééquipe pour la suite du test.
+  await page.tapElement('.amulet-row[data-id="sage"] .amulet-toggle');
+  await page.tapElement('.amulet-row.equipped .amulet-actions button:nth-child(2)');
+  check((await page.text('.amulet-row.equipped .amulet-desc')).includes('Niveau 2'), 'rééquipée, l’amulette remonte au niveau 2 avec « + »');
   check((await page.text('#btn-amulet')).includes('×2') && !(await page.eval(`document.querySelector('#btn-amulet').classList.contains('hidden')`)), 'le menu montre l’amulette équipée et son niveau');
   await page.tapElement('#tab-styles');
   await checkReachable(page, 'collection : apparences atteignables', ['.swatch[data-category="projectile"][data-id="crimson"]', '.swatch[data-category="dust"][data-id="default"]', '#btn-collection-back']);

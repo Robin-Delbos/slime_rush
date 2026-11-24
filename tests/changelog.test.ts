@@ -40,6 +40,12 @@ describe('Journal des nouveautés', () => {
     }
   });
 
+  it('ne révèle pas l’easter egg du niveau 100 (mode Légende, trophée)', () => {
+    for (const release of CHANGELOG) {
+      for (const change of release.changes) expect(change.text, `${release.version} : ${change.text}`).not.toMatch(/légende|niveau 100|trophée|invincib/i);
+    }
+  });
+
   it('écrit la date en français', () => {
     expect(formatReleaseDate('2026-11-21')).toBe('21 novembre 2026');
     expect(formatReleaseDate('2026-01-05')).toBe('5 janvier 2026');

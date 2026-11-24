@@ -2,7 +2,7 @@
  * Journal des nouveautés, affiché dans le jeu quand on touche la version au menu.
  *
  * On n'y met que ce qui sert au joueur : contenu, règles, confort de jeu, défauts corrigés. Pas de refonte du code, de test
- * ni d'outil. Chaque nouvelle version de `package.json` y ajoute son entrée EN PREMIER (un test vérifie qu'elle existe).
+ * ni d'outil. Jamais un mot sur le niveau 100 (mode Légende, trophée) : c'est un easter egg. Chaque nouvelle version de `package.json` y ajoute son entrée EN PREMIER (un test vérifie qu'elle existe).
  */
 
 /** `new` : nouveauté ; `change` : une règle ou un réglage qui change ; `fix` : un défaut corrigé. */
@@ -30,13 +30,17 @@ const f = (text: string): Change => ({ kind: 'fix', text });
 /** Du plus récent au plus ancien. */
 export const CHANGELOG: Release[] = [
   {
+    version: '0.9.1',
+    date: '2026-11-24',
+    changes: [c('Écran des amulettes : le bouton « − » d’une amulette au niveau 1 la retire, comme le bouton « Retirer ».')],
+  },
+  {
     version: '0.9.0',
     date: '2026-11-23',
     changes: [
       n('Journal des nouveautés : touchez le numéro de version au menu pour voir ce qui a changé.'),
       c('Écran des héros : trois héros par ligne au maximum, sur tous les écrans, pour des cadres plus grands et plus lisibles.'),
       n('Une amulette équipée se voit au menu (icône et niveau) ; la toucher ouvre la collection sur les amulettes.'),
-      n('Au menu, la description de l’arme indique « Niveau 100 atteint » quand le trophée est gagné (le texte du trophée ne s’affichait pas sur mobile).'),
       c('Joystick plus réactif : le héros va toujours à pleine vitesse (plus de marche lente), et le joystick suit le doigt, donc changer de direction est immédiat.'),
       c('Les ennemis peuvent maintenant surgir juste derrière la clôture, près d’un héros collé à un bord ou dans un coin (toujours à l’extérieur de la clôture) : rester dans un coin n’est plus sûr. Les boss, eux, restent loin.'),
       c('Un boss rapporte plus : 99 XP et 99 pièces en mourant (au lieu de 36 XP et 42 pièces).'),
@@ -142,7 +146,6 @@ export const CHANGELOG: Release[] = [
       n('Une arme au choix pour toute la partie (carabine, gardiens, aura ardente, lance), à débloquer avec l’or gagné.'),
       n('Quatre difficultés, de facile à extrême, avec un multiplicateur d’or.'),
       n('Un boss toutes les deux minutes, de plus en plus nombreux ; chaque niveau rend un peu de vie.'),
-      n('Mode Légende au niveau 100 : 60 secondes d’invincibilité et de grande puissance.'),
       n('Sauvegarde exportable et importable (code à copier ou fichier).'),
     ],
   },

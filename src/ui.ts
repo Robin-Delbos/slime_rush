@@ -595,9 +595,10 @@ private refreshChests(): void {
       text.append(make('span', 'amulet-name', `${a.name} ×${count}`), make('span', 'amulet-desc', `Niveau ${level} : ${a.describe(level)}`));
       const actions = make('div', 'amulet-actions');
       if (equipped) {
+        // « − » baisse le niveau ; au niveau 1 (un seul exemplaire équipé), il retire l'amulette, comme « Retirer » (décision de
+        // l'utilisateur). Il n'est donc jamais grisé.
         const minus = make('button', 'step-btn', '−');
-        minus.disabled = level <= 1;
-        minus.addEventListener('click', () => this.handlers.onEquipAmulet(a.id, level - 1));
+        minus.addEventListener('click', () => (level <= 1 ? this.handlers.onEquipAmulet('', 1) : this.handlers.onEquipAmulet(a.id, level - 1)));
         const plus = make('button', 'step-btn', '+');
         plus.disabled = level >= Math.min(count, AMULET_MAX_LEVEL);
         plus.addEventListener('click', () => this.handlers.onEquipAmulet(a.id, level + 1));
