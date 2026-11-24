@@ -264,7 +264,7 @@ describe('branchement dans le jeu', () => {
   it('la 3D est redessinée à cadence réduite derrière les écrans qui la cachent (boutique, sauvegarde, crédits, coffres), pas derrière la collection', () => {
     expect(gameSource).toContain("(this.state === 'menu' && this.ui.sceneCovered)");
     const getter = uiSource.slice(uiSource.indexOf('get sceneCovered()'), uiSource.indexOf('showMenu(): void'));
-    expect(getter).toContain('[this.shop, this.saveScreen, this.credits, this.reveal]');
+    expect(getter).toContain('[this.shop, this.saveScreen, this.credits, this.changelog, this.reveal]');
     expect(getter).not.toContain('this.collection');
   });
 

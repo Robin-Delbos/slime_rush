@@ -328,9 +328,9 @@ describe('Enemies', () => {
   it('fait apparaître les ennemis hors de l’écran et plus résistants avec le temps', () => {
     const { enemies } = makeArena();
     const early = enemies.spawn(0, 5, -3, enemyType('slime'));
-    // Hors de la clôture (donc hors de l'arène) et à plus de 26 unités du héros (voir tests/spawn.test.ts).
+    // Hors de la clôture (donc hors de l'arène) et à plus de 3 unités du héros (26 pour un boss, voir tests/spawn.test.ts).
     expect(Math.max(Math.abs(early.x), Math.abs(early.z))).toBeGreaterThan(ARENA);
-    expect(Math.hypot(early.x - 5, early.z + 3)).toBeGreaterThanOrEqual(26);
+    expect(Math.hypot(early.x - 5, early.z + 3)).toBeGreaterThanOrEqual(3);
     const late = enemies.spawn(180, 0, 0, enemyType('slime'));
     expect(late.hp).toBeCloseTo(early.hp * 3);
   });

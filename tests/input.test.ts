@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Input } from '../src/input';
+import { Input, JOYSTICK_DEAD_ZONE, JOYSTICK_RADIUS } from '../src/input';
 
 type Handler = (event: Record<string, unknown>) => void;
 
@@ -32,6 +32,7 @@ function setup() {
   return {
     input,
     taps,
+    base,
     stickShown: () => !hidden.value,
     down: (id: number, x: number, y: number) => fire('pointerdown', id, x, y),
     move: (id: number, x: number, y: number) => fire('pointermove', id, x, y),
@@ -108,7 +109,8 @@ describe('deux mains : un doigt déplace, l’autre frappe', () => {
     expect(t.stickShown()).toBe(true);
     // Et il continue de piloter après le tap.
     clock += 100;
-    t.move(1, 100, 250);
+    // Le joystick a suivi le doigt jusqu'en (110, 300) : le doigt monte de 50 px depuis là.
+    t.move(1, 110, 250);
     expect(t.input.vector.x).toBeCloseTo(0);
     expect(t.input.vector.y).toBeCloseTo(1);
   });
@@ -223,5 +225,79 @@ describe('deux mains : un doigt déplace, l’autre frappe', () => {
     clock += 400;
     t.move(3, 350, 300);
     expect(t.input.vector.x).toBeCloseTo(1);
+  });
+});
+
+describe('joystick : direction seule, zone morte, point de départ qui suit le doigt', () => {
+  const speed = (v: { x: number; y: number }) => Math.hypot(v.x, v.y);
+
+  it('ne bouge pas dans la zone morte, et va à pleine vitesse juste au-delà', () => {
+    const t = setup();
+    t.down(1, 300, 300);
+    t.move(1, 300 + JOYSTICK_DEAD_ZONE - 1, 300);
+    expect(t.input.vector).toEqual({ x: 0, y: 0 });
+    t.move(1, 300 + JOYSTICK_DEAD_ZONE + 1, 300);
+    expect(speed(t.input.vector)).toBeCloseTo(1);
+    expect(t.input.vector.x).toBeCloseTo(1);
+  });
+
+  it('la vitesse ne dépend pas de l’écart du doigt : plus de marche lente au milieu du joystick', () => {
+    const t = setup();
+    t.down(1, 300, 300);
+    for (const d of [JOYSTICK_DEAD_ZONE + 1, 15, 25, JOYSTICK_RADIUS, 90, 200]) {
+      t.move(1, 300, 300 - d);
+      expect(speed(t.input.vector), `écart ${d}`).toBeCloseTo(1);
+    }
+  });
+
+  it('en diagonale aussi : vecteur de longueur 1, dans la direction du doigt', () => {
+    const t = setup();
+    t.down(1, 300, 300);
+    t.move(1, 320, 280);
+    const v = t.input.vector;
+    expect(speed(v)).toBeCloseTo(1);
+    expect(v.x).toBeCloseTo(Math.SQRT1_2);
+    expect(v.y).toBeCloseTo(Math.SQRT1_2);
+  });
+
+  it('un doigt qui s’éloigne tire le point de départ (et l’anneau) avec lui, toujours à JOYSTICK_RADIUS derrière', () => {
+    const t = setup();
+    t.down(1, 300, 300);
+    t.move(1, 700, 300);
+    expect(t.base.style.left).toBe(`${700 - JOYSTICK_RADIUS}px`);
+    expect(t.base.style.top).toBe('300px');
+  });
+
+  it('changer de direction après un long trajet ne demande qu’un petit mouvement du doigt', () => {
+    const t = setup();
+    t.down(1, 300, 300);
+    // Un long trajet vers la droite : le doigt est à 400 px du point d'appui d'origine.
+    t.move(1, 700, 300);
+    expect(t.input.vector.x).toBeCloseTo(1);
+    // Demi-tour : il suffit de revenir de quelques pixels au-delà de la zone morte (avant : plus de 400 px).
+    t.move(1, 700 - JOYSTICK_RADIUS - JOYSTICK_DEAD_ZONE - 1, 300);
+    expect(t.input.vector.x).toBeCloseTo(-1);
+    // Et partir vers le haut ne demande pas non plus de revenir au point de départ.
+    t.move(1, 650, 240);
+    expect(t.input.vector.y).toBeGreaterThan(0.5);
+  });
+
+  it('un long glissement n’est jamais pris pour un tap, même si le joystick a suivi le doigt', () => {
+    const t = setup();
+    t.down(1, 300, 300);
+    clock += 100;
+    t.move(1, 700, 300);
+    t.move(1, 700 - 30, 300);
+    t.up(1, 670, 300);
+    expect(t.taps).toEqual([]);
+  });
+
+  it('un doigt qui tremble dans la zone morte reste un tap', () => {
+    const t = setup();
+    t.down(1, 300, 300);
+    clock += 100;
+    t.move(1, 304, 297);
+    t.up(1, 304, 297);
+    expect(t.taps).toEqual([{ x: 304, y: 297 }]);
   });
 });

@@ -4,7 +4,9 @@ import { baseStats } from '../src/player';
 import { resetRandom, seedRandom } from '../src/rng';
 import {
   BOSS_COINS,
+  BOSS_COIN_VALUE,
   BOSS_GEMS,
+  BOSS_GEM_VALUE,
   BOSS_INTERVAL,
   BOSS_SPACING,
   LEGEND_BOOST,
@@ -447,8 +449,18 @@ describe('Run : vagues de boss', () => {
       run.update(0.05, STILL);
       run.pendingChoices = null;
     }
-    expect(run.gold).toBeGreaterThanOrEqual(BOSS_COINS * 3 - 1);
+    expect(run.gold).toBeGreaterThanOrEqual(BOSS_COINS * BOSS_COIN_VALUE - 1);
     expect(run.level).toBeGreaterThan(2);
+  });
+
+  it('rapporte exactement 33 gemmes de 3 XP (99 XP) et 33 pièces de 3 (99 pièces), quel que soit le moment de la partie', () => {
+    // Décision de l'utilisateur : butin fixe, 99 XP et 99 pièces par boss.
+    expect(BOSS_GEMS).toBe(33);
+    expect(BOSS_GEM_VALUE).toBe(3);
+    expect(BOSS_GEMS * BOSS_GEM_VALUE).toBe(99);
+    expect(BOSS_COINS).toBe(33);
+    expect(BOSS_COIN_VALUE).toBe(3);
+    expect(BOSS_COINS * BOSS_COIN_VALUE).toBe(99);
   });
 
   it('repart de zéro avec reset()', () => {

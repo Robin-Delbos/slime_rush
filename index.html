@@ -105,6 +105,8 @@
           <div class="menu-info">
             <span id="menu-gold" class="pill">🪙 0</span>
             <span id="best-start" class="pill">🏆 --:--</span>
+            <!-- Amulette équipée (icône et niveau) : n'apparaît que s'il y en a une ; touchée, elle ouvre la collection sur les amulettes. -->
+            <button id="btn-amulet" class="pill pill-btn pill-amulet hidden"></button>
             <button id="btn-music-menu" class="pill pill-btn" aria-label="Activer ou couper la musique" aria-pressed="true">🎵</button>
             <button id="btn-sound" class="pill pill-btn" aria-label="Activer ou couper le son">🔊</button>
             <button id="btn-save" class="pill pill-btn" aria-label="Exporter ou importer la sauvegarde">💾</button>
@@ -132,7 +134,7 @@
             </button>
           </div>
           <div class="menu-foot">
-            <span id="version" class="version"></span>
+            <button id="version" class="link-btn version" aria-label="Nouveautés de chaque version"></button>
             <button id="btn-credits" class="link-btn">Crédits et licences</button>
             <!-- Seulement sur téléphone et tablette, tant que le jeu n'est pas installé (voir src/screen.ts). -->
             <button id="btn-install" class="link-btn hidden">Installer l’application</button>
@@ -218,6 +220,13 @@
         <button id="btn-credits-back" class="btn btn-alt">Retour</button>
       </div>
 
+      <div id="overlay-changelog" class="overlay hidden">
+        <h2>Nouveautés</h2>
+        <p class="hint">Ce qui change pour le joueur, version après version.</p>
+        <div id="changelog-list" class="credits-list"></div>
+        <button id="btn-changelog-back" class="btn btn-alt">Retour</button>
+      </div>
+
       <div id="overlay-privacy" class="overlay hidden">
         <iframe id="privacy-frame" title="Politique de confidentialité" data-src="./confidentialite.html"></iframe>
         <button id="btn-privacy-back" class="btn btn-small btn-alt">Retour</button>
@@ -225,6 +234,8 @@
 
       <div id="overlay-collection" class="overlay hidden" data-tab="heroes">
         <h2>Collection</h2>
+        <!-- Les pièces, aussi ici : on y achète des héros. -->
+        <span id="collection-gold" class="pill">🪙 0</span>
         <div class="tabs" role="tablist" aria-label="Contenu de la collection">
           <button id="tab-heroes" class="tab selected" role="tab" data-tab="heroes" aria-selected="true">Héros</button>
           <button id="tab-styles" class="tab" role="tab" data-tab="styles" aria-selected="false">Apparences</button>

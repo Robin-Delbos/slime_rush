@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { BOSS_TYPES, ENEMY_TYPES } from '../src/enemies';
 import { random, resetRandom, seedRandom } from '../src/rng';
-import { MIN_SPAWN_DISTANCE, spawnOutside, squareExit } from '../src/spawn';
+import { BOSS_SPAWN_DISTANCE, MIN_SPAWN_DISTANCE, spawnOutside, squareExit } from '../src/spawn';
 import { ARENA, FENCE } from '../src/world';
 import { makeArena, makeRun, simulate } from './helpers';
 
@@ -79,9 +79,29 @@ describe('point d’apparition', () => {
     expect([...sides].sort()).toEqual(['est', 'nord', 'ouest', 'sud']);
   });
 
-  it('collé à un bord, aucun ennemi n’apparaît derrière la clôture toute proche : ils viennent de plus loin', () => {
+  it('la distance minimale est de 3 unités pour les ennemis ordinaires et de 26 pour les boss', () => {
+    expect(MIN_SPAWN_DISTANCE).toBe(3);
+    expect(BOSS_SPAWN_DISTANCE).toBe(26);
+  });
+
+  it('collé à un bord, un ennemi ordinaire peut surgir derrière la clôture proche (à 3 unités ou plus), mais pas un boss', () => {
+    seedRandom(11);
+    let nearest = Infinity;
+    for (let k = 0; k < 600; k++) {
+      const p = spawnOutside(ARENA, 0, FENCE + 1, () => random() * Math.PI * 2);
+      const distance = Math.hypot(p.x - ARENA, p.z);
+      nearest = Math.min(nearest, distance);
+      expect(distance).toBeGreaterThanOrEqual(MIN_SPAWN_DISTANCE - 1e-9);
+      const boss = spawnOutside(ARENA, 0, FENCE + 1, () => random() * Math.PI * 2, BOSS_SPAWN_DISTANCE);
+      expect(Math.hypot(boss.x - ARENA, boss.z)).toBeGreaterThanOrEqual(BOSS_SPAWN_DISTANCE - 1e-9);
+    }
+    // Il en naît bien près du héros (entre 3 et 26 unités) : c'est le but, la file venue de l'autre bout n'est plus la seule.
+    expect(nearest).toBeLessThan(BOSS_SPAWN_DISTANCE);
+  });
+
+  it('collé à un bord, aucun ennemi n’apparaît à moins de 3 unités, derrière la clôture toute proche', () => {
     seedRandom(8);
-    // Héros contre la clôture est : les directions vers l'est donneraient un point à 3 unités, elles sont écartées.
+    // Héros contre la clôture est : les directions vers l'est donneraient un point à 2,5 unités, elles sont écartées.
     for (let k = 0; k < 300; k++) {
       const p = spawnOutside(ARENA, 0, FENCE + 1, () => random() * Math.PI * 2);
       expect(Math.hypot(p.x - ARENA, p.z)).toBeGreaterThanOrEqual(MIN_SPAWN_DISTANCE - 1e-9);
@@ -89,7 +109,7 @@ describe('point d’apparition', () => {
   });
 
   it('si aucune direction tirée ne convient, repart du côté opposé (vers le centre) au lieu d’échouer', () => {
-    // Le tirage donne toujours « vers l'est », à 3 unités de la clôture : jamais assez loin.
+    // Le tirage donne toujours « vers l'est », à 2,5 unités de la clôture : jamais assez loin.
     let calls = 0;
     const p = spawnOutside(ARENA, 0, FENCE + 1, () => (calls++, 0));
     expect(calls).toBe(9);
@@ -102,8 +122,12 @@ describe('point d’apparition', () => {
     for (let k = 0; k < 360; k++) {
       // Les huit premiers tirages sont mauvais (vers le coin), le neuvième parcourt toute la plage de l'écart.
       let calls = 0;
-      const p = spawnOutside(ARENA, ARENA, FENCE + 1, () => (++calls <= 8 ? Math.PI / 4 : (k / 360) * 2 * Math.PI));
+      const p = spawnOutside(ARENA, ARENA, FENCE + 1, () => (++calls <= 8 ? 0 : (k / 360) * 2 * Math.PI));
       expect(Math.hypot(p.x - ARENA, p.z - ARENA)).toBeGreaterThanOrEqual(MIN_SPAWN_DISTANCE);
+      // Même pour un boss : la direction de repli, vers le centre, sort très loin.
+      let bossCalls = 0;
+      const boss = spawnOutside(ARENA, ARENA, FENCE + 1, () => (++bossCalls <= 8 ? 0 : (k / 360) * 2 * Math.PI), BOSS_SPAWN_DISTANCE);
+      expect(Math.hypot(boss.x - ARENA, boss.z - ARENA)).toBeGreaterThanOrEqual(BOSS_SPAWN_DISTANCE);
     }
   });
 
@@ -124,7 +148,8 @@ describe('apparition des ennemis dans le jeu', () => {
           const e = enemies.spawn(0, px, pz, type);
           // Le corps entier est dehors : le bord de l'ennemi est au-delà de la clôture, pas seulement son centre.
           expect(reach(e) - type.radius).toBeGreaterThan(FENCE);
-          expect(Math.hypot(e.x - px, e.z - pz)).toBeGreaterThanOrEqual(MIN_SPAWN_DISTANCE - 1e-9);
+          // 3 unités pour les ennemis ordinaires, 26 pour les boss.
+          expect(Math.hypot(e.x - px, e.z - pz)).toBeGreaterThanOrEqual((type.boss ? BOSS_SPAWN_DISTANCE : MIN_SPAWN_DISTANCE) - 1e-9);
         }
       }
     }
@@ -176,7 +201,12 @@ describe('apparition des ennemis dans le jeu', () => {
     boss.z = 0;
     // La charge file vers l'extérieur (direction figée au moment de viser), le héros étant resté loin, au centre.
     boss.boss = { phase: 'charge', attack: 'charge', timer: 5, dirX: 1, dirZ: 0 };
-    for (let i = 0; i < 120; i++) enemies.update(0.016, 0, player);
+    for (let i = 0; i < 120; i++) {
+      enemies.update(0.016, 0, player);
+      // Seul le boss compte ici : un ennemi ordinaire né derrière la clôture, juste à côté, le repousserait de quelques millièmes
+      // d'unité vers l'extérieur (séparation entre ennemis) et ferait échouer ce test de temps en temps.
+      enemies.list.splice(0, enemies.list.length, boss);
+    }
     expect(boss.x).toBeLessThanOrEqual(ARENA + 2 + 1e-9);
   });
 });

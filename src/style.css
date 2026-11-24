@@ -1465,6 +1465,7 @@ h2 {
 #overlay-shop,
 #overlay-save,
 #overlay-credits,
+#overlay-changelog,
 #overlay-collection {
   background: rgba(20, 24, 64, 0.92);
 }
@@ -3238,13 +3239,6 @@ html[data-device='mobile'] #overlay-gameover {
   }
 }
 
-/* Écran assez large : quatre cartes par rangée (deux rangées pour huit héros) au lieu de trois. */
-@media (orientation: landscape) and (max-height: 480px) and (min-width: 640px) {
-  #characters {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-
 /* ---------- Listes à l'horizontale sur téléphone : améliorations, apparences, amulettes, sauvegarde ---------- */
 
 /* Mêmes informations, mais sur plusieurs colonnes (la largeur ne manque pas, la hauteur oui) : moins de défilement. */
@@ -3264,8 +3258,9 @@ html[data-device='mobile'] #overlay-gameover {
     line-height: 1.25;
   }
 
-  /* Boutique : les pièces en haut à droite, au lieu d'une ligne à elles seules. */
-  #overlay-shop #shop-gold {
+  /* Boutique et collection : les pièces en haut à droite, au lieu d'une ligne à elles seules. */
+  #overlay-shop #shop-gold,
+  #overlay-collection #collection-gold {
     position: absolute;
     top: calc(8px + env(safe-area-inset-top));
     right: calc(14px + env(safe-area-inset-right));
@@ -3514,11 +3509,133 @@ html[data-device='mobile'] #overlay-gameover {
   }
 
   /* Crédits (liste qui défile) et politique de confidentialité : de la place, on en prend. */
-  #overlay-credits {
+  #overlay-credits,
+  #overlay-changelog {
     padding-bottom: calc(16px + env(safe-area-inset-bottom));
   }
 
   #overlay-privacy {
     padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ---------- Nouveautés (src/changelog.ts) : un menu déroulant par version ---------- */
+
+/* La version du menu est un bouton : elle garde son apparence discrète. */
+button.version {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.changelog-release summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.changelog-date {
+  font-size: 12.5px;
+  font-weight: 700;
+  opacity: 0.7;
+}
+
+.changelog-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 2px;
+  padding: 0;
+  list-style: none;
+}
+
+.changelog-item {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.changelog-kind {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+  color: #10142f;
+}
+
+.changelog-kind.new {
+  background: #7df0a4;
+}
+
+.changelog-kind.change {
+  background: #ffd36b;
+}
+
+.changelog-kind.fix {
+  background: #8fd3ff;
+}
+
+/* ---------- Annonce du boss à l'horizontale sur téléphone : plus petite, mais toujours bien lisible ---------- */
+
+/* Peu de hauteur : l'annonce prenait plus d'un huitième de l'écran. Texte de 20 px gras sur fond rouge à contour blanc :
+   elle reste la chose la plus voyante de l'écran, sans cacher l'arène. */
+@media (orientation: landscape) and (max-height: 480px) {
+  #banner {
+    top: 20%;
+    padding: 3px 18px;
+    border-width: 3px;
+    border-radius: 14px;
+    box-shadow: 0 3px 0 #6e0f24;
+    font-size: clamp(17px, 4.8vh, 22px);
+    line-height: 1.15;
+    letter-spacing: 0.5px;
+    text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+  }
+
+  #banner.legend {
+    box-shadow:
+      0 3px 0 #b8760f,
+      0 0 18px rgba(255, 210, 80, 0.95);
+  }
+}
+
+/* Mention « Niveau 100 atteint » de la description d'arme : elle ne se coupe pas en deux lignes. */
+.legend-note {
+  white-space: nowrap;
+  color: #ffd36b;
+}
+
+/* ---------- Pastille de l'amulette équipée (menu) ---------- */
+
+.pill-amulet {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #fff;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.pill-icon svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+/* À l'horizontale, la rangée des pastilles est serrée : celle-ci l'est aussi. */
+@media (orientation: landscape) and (max-height: 480px) {
+  .pill-amulet {
+    gap: 2px;
+    padding: 3px 8px;
+  }
+
+  .pill-icon svg {
+    width: 16px;
+    height: 16px;
   }
 }

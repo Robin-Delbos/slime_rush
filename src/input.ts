@@ -1,11 +1,19 @@
-const JOYSTICK_RADIUS = 50;
+/** Écart maximal (px) entre le point de départ du joystick et le doigt : au-delà, le point de départ suit le doigt. */
+export const JOYSTICK_RADIUS = 50;
+/**
+ * Zone morte (px) autour du point de départ : en dessous, le héros ne bouge pas (un doigt qui tremble ne le fait pas partir).
+ * Au-delà, il va toujours à pleine vitesse, dans la direction du doigt : la vitesse ne dépend pas de l'écart (voir `Input.vector`).
+ */
+export const JOYSTICK_DEAD_ZONE = 8;
 /** Un appui plus court et plus immobile que ces seuils compte comme un "tap", pas comme un déplacement. */
 const TAP_MAX_MS = 250;
 const TAP_MAX_TRAVEL = 12;
 
 /**
  * Entrées unifiées : clavier (ZQSD / WASD / flèches) et joystick flottant
- * (doigt ou clic maintenu n'importe où sur la zone de jeu).
+ * (doigt ou clic maintenu n'importe où sur la zone de jeu). Le joystick ne donne que la direction (vitesse maximale dès la zone
+ * morte dépassée) et son point de départ suit le doigt quand il s'éloigne : changer de direction ne coûte qu'un petit mouvement
+ * du doigt, jamais le trajet déjà parcouru ni un passage lent par le milieu.
  *
  * Jeu à deux mains sur mobile : le premier doigt posé déplace le héros ; tant qu'il reste posé, chaque autre doigt ne déplace
  * rien, mais un appui bref de sa part est un « tap » (attaque spéciale à l'endroit touché).
@@ -18,7 +26,10 @@ export class Input {
   private stickX = 0;
   private stickY = 0;
   private downTime = 0;
-  /** Plus grand écart (px) entre le point d'appui et le doigt pendant l'appui en cours. */
+  /** Où le doigt s'est posé (le point de départ du joystick, lui, se déplace avec le doigt). */
+  private downX = 0;
+  private downY = 0;
+  /** Plus grand écart (px) entre l'endroit où le doigt s'est posé et le doigt pendant l'appui en cours. */
   private travel = 0;
   /** Doigts posés en plus du premier : ils ne servent qu'à taper. */
   private extra = new Map<number, { x: number; y: number; time: number; travel: number }>();
@@ -61,6 +72,8 @@ export class Input {
       surface.setPointerCapture(e.pointerId);
       this.originX = e.clientX;
       this.originY = e.clientY;
+      this.downX = e.clientX;
+      this.downY = e.clientY;
       this.downTime = performance.now();
       this.travel = 0;
       base.style.left = `${e.clientX}px`;
@@ -126,16 +139,29 @@ export class Input {
   }
 
   private moveStick(clientX: number, clientY: number): void {
+    this.travel = Math.max(this.travel, Math.hypot(clientX - this.downX, clientY - this.downY));
     let dx = clientX - this.originX;
     let dy = clientY - this.originY;
     const len = Math.hypot(dx, dy);
-    this.travel = Math.max(this.travel, len);
     if (len > JOYSTICK_RADIUS) {
-      dx = (dx / len) * JOYSTICK_RADIUS;
-      dy = (dy / len) * JOYSTICK_RADIUS;
+      // Le doigt s'éloigne : le point de départ le suit, toujours à JOYSTICK_RADIUS derrière lui (l'anneau affiché aussi).
+      const pull = (len - JOYSTICK_RADIUS) / len;
+      this.originX += dx * pull;
+      this.originY += dy * pull;
+      this.base.style.left = `${this.originX}px`;
+      this.base.style.top = `${this.originY}px`;
+      dx = clientX - this.originX;
+      dy = clientY - this.originY;
     }
+    const shown = Math.hypot(dx, dy);
     this.knob.style.transform = `translate(${dx}px, ${dy}px)`;
-    this.stickX = dx / JOYSTICK_RADIUS;
-    this.stickY = -dy / JOYSTICK_RADIUS;
+    if (shown <= JOYSTICK_DEAD_ZONE) {
+      this.stickX = 0;
+      this.stickY = 0;
+      return;
+    }
+    // Direction seulement : pleine vitesse dès la zone morte dépassée.
+    this.stickX = dx / shown;
+    this.stickY = -dy / shown;
   }
 }

@@ -58,9 +58,9 @@ export const MAX_BOSSES = 4;
 /** Délai entre deux boss d'une même vague. */
 export const BOSS_SPACING = 6;
 /** Ce qu'un boss lâche en mourant. */
-export const BOSS_COINS = 14;
+export const BOSS_COINS = 33;
 export const BOSS_COIN_VALUE = 3;
-export const BOSS_GEMS = 12;
+export const BOSS_GEMS = 33;
 export const BOSS_GEM_VALUE = 3;
 /**
  * Niveau secret : l'atteindre déclenche pendant 60 secondes un mode ultra-puissant (invincible, très fort),

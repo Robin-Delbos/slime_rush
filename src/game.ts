@@ -432,6 +432,7 @@ export class Game {
     this.resetRun(this.run);
     this.effects.clear();
     this.input.release();
+    this.hurtTimer = 0;
     this.applyCharacter();
     this.world.setMode('menu');
     this.ui.showMenu();
@@ -445,6 +446,7 @@ export class Game {
     const amulet = consumeAmulet(this.save);
     if (amulet) this.commit();
     this.resetRun(this.run, true, amulet);
+    this.hurtTimer = 0;
     this.dev?.setVisible(false);
     this.effects.clear();
     this.world.setMode('play');
@@ -634,8 +636,10 @@ export class Game {
       }
       this.hurtTimer = Math.max(0, this.hurtTimer - dt);
     }
-    if (this.view && !dead) this.view.object.visible = this.hurtTimer <= 0 || Math.floor(this.hurtTimer * 18) % 2 === 0;
-    else if (this.view) this.view.object.visible = true;
+    // Le clignotement n'existe qu'en partie : le chrono ne baisse que là, donc hors partie (menu, aperçu des héros) il resterait
+    // figé sur une valeur « cachée » et le héros disparaîtrait.
+    const blinking = this.state === 'playing' && !dead;
+    if (this.view) this.view.object.visible = !blinking || this.hurtTimer <= 0 || Math.floor(this.hurtTimer * 18) % 2 === 0;
   }
 
   private openLevelUp(run: Run, choices: Upgrade[]): void {
@@ -699,6 +703,7 @@ export class Game {
         weapons: this.run?.weapons.owned ?? [],
         difficulty: this.save.difficulty,
         hasModel: this.view !== null,
+        heroShown: this.view?.object.visible ?? false,
         previewing: this.previewing,
         trying: this.tryHero,
       }),
@@ -717,6 +722,12 @@ export class Game {
         if (!player) return;
         player.stats.regen = 0;
         player.takeDamage(1e9);
+      },
+      /** Affiche l'annonce centrale (comme à l'arrivée d'un boss), pour mesurer sa taille. */
+      banner: (text: string) => this.ui.showBanner(text),
+      /** Lance le clignotement du héros touché avec `t` secondes restantes (0,45 au plus) : pour reproduire une mort en plein clignotement. */
+      blink: (t: number) => {
+        this.hurtTimer = t;
       },
       /** Avance le chronomètre de la partie (pour déclencher une vague de boss). */
       setTime: (t: number) => {

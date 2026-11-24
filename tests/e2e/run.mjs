@@ -224,6 +224,20 @@ async function scenario(page, url, viewport) {
   await shot('0-credits');
   await page.click('#btn-credits-back');
   check(!(await page.visible('#overlay-credits')) && !(await page.eval(`document.querySelector('#overlay-start').classList.contains('covered')`)), 'les crédits se referment sur le menu');
+
+  // Journal des nouveautés : on touche la version du menu, un menu déroulant par version, la plus récente ouverte.
+  const currentVersion = (await page.text('#version')).replace(/^v/, '').replace(/ .*/, '');
+  await page.click('#version');
+  check((await page.visible('#overlay-changelog')) && (await page.eval(`document.querySelector('#overlay-start').classList.contains('covered')`)), 'toucher la version ouvre le journal des nouveautés par-dessus le menu');
+  const log = await page.eval(`(() => { const d = [...document.querySelectorAll('#changelog-list details')]; return { count: d.length, open: d.filter((x) => x.open).length, firstOpen: d[0]?.open, first: d[0]?.querySelector('summary')?.textContent ?? '', kinds: [...new Set([...document.querySelectorAll('.changelog-kind')].map((k) => k.textContent))] }; })()`);
+  check(log.count >= 5 && log.open === 1 && log.firstOpen, `le journal liste chaque version, la plus récente seule ouverte (${log.count} versions)`);
+  check(log.first.includes(`v${currentVersion}`), `la première entrée du journal est la version en cours (${log.first})`);
+  check(log.kinds.includes('Nouveau') && log.kinds.includes('Corrigé'), 'le journal distingue les nouveautés et les corrections');
+  await page.click('#changelog-list details:nth-child(2) summary');
+  check(await page.eval(`document.querySelectorAll('#changelog-list details[open]').length === 2`), 'toucher une version la déplie');
+  await shot('0-nouveautes');
+  await page.click('#btn-changelog-back');
+  check(!(await page.visible('#overlay-changelog')) && !(await page.eval(`document.querySelector('#overlay-start').classList.contains('covered')`)), 'le journal se referme sur le menu');
   await page.click('#btn-collection');
   check(await page.visible('#overlay-collection') && (await page.visible('#panel-heroes')) && !(await page.visible('#panel-styles')), 'la collection s’ouvre sur l’onglet des héros');
   await page.click('.char-card[data-id="anne"]');
@@ -293,6 +307,7 @@ async function scenario(page, url, viewport) {
   await page.click('#btn-collection-back');
   check(!(await page.visible('#overlay-collection')), 'la collection se ferme');
   check(goldOf(await page.text('#menu-gold')) === 1980, 'l’achat du héros débite son prix');
+  check(goldOf(await page.text('#collection-gold')) === 1980 && (await page.visible('#collection-gold')), 'l’écran des héros affiche les pièces, mises à jour après un achat');
 
   // --- Armes et difficulté ---
   await page.eval('window.__game.addGold(500)');
@@ -453,10 +468,33 @@ async function scenario(page, url, viewport) {
   // --- Retour au menu et persistance ---
   await page.click('#btn-menu');
   check((await page.game()).state === 'menu', 'le bouton Menu ramène au menu');
+
+  // --- Mort en plein clignotement : le héros doit rester visible au menu et dans l'aperçu des héros ---
+  // Le chrono du clignotement ne baisse qu'en partie ; figé sur une valeur « cachée » (0,2 s : 3,6 → impair), il cachait le héros
+  // pour de bon au retour au menu (corrigé). Le coup mortel tombe souvent dans le délai d'invulnérabilité, donc en plein clignotement.
+  await page.click('#btn-start');
+  await page.waitFor('la partie', `window.__game.state().state === 'playing'`);
+  await page.eval('window.__game.blink(0.2)');
+  await page.eval('window.__game.kill()');
+  await page.waitFor('la mort', `window.__game.state().state === 'gameover'`, 6000);
+  await page.click('#btn-menu');
+  await sleep(500);
+  const afterBlink = await page.game();
+  check(afterBlink.state === 'menu' && afterBlink.hasModel && afterBlink.heroShown, 'mort en plein clignotement : le héros reste visible au menu');
+  await page.click('#btn-start');
+  await page.waitFor('la partie', `window.__game.state().state === 'playing'`);
+  await page.eval('window.__game.blink(0.2)');
+  await page.click('#btn-pause');
+  await page.click('#btn-quit');
+  await page.click('#btn-menu');
+  await sleep(500);
+  const beforeReload = await page.game();
+  check(beforeReload.heroShown, 'quitter depuis la pause en plein clignotement : le héros reste visible au menu');
+
   await page.send('Page.navigate', { url: `${url}?debug` });
   await page.waitFor('le rechargement', `!!window.__game && !document.querySelector('#btn-start').disabled`);
   const reloaded = await page.game();
-  check(reloaded.gold === quit.gold && reloaded.selected === 'anne', 'la progression est conservée après rechargement');
+  check(reloaded.gold === beforeReload.gold && reloaded.selected === 'anne', 'la progression est conservée après rechargement');
   check(reloaded.weapon === 'aura' && reloaded.difficulty === 'easy', 'l’arme et la difficulté sont conservées après rechargement');
 
   // --- Export puis import de la sauvegarde dans un navigateur "neuf" ---
@@ -491,11 +529,11 @@ async function scenario(page, url, viewport) {
   await shot('8-sauvegarde-import');
   await page.click('#btn-import');
   const imported = await page.game();
-  check(imported.gold === quit.gold && imported.selected === 'anne', 'la confirmation restaure l’or et l’apparence');
+  check(imported.gold === beforeReload.gold && imported.selected === 'anne', 'la confirmation restaure l’or et l’apparence');
   check(imported.weapon === 'aura' && imported.difficulty === 'easy', 'la confirmation restaure l’arme et la difficulté');
   await page.click('#btn-save-back');
   check(!(await page.visible('#overlay-save')), 'l’écran de sauvegarde se ferme');
-  check(goldOf(await page.text('#menu-gold')) === quit.gold, 'le menu affiche l’or importé');
+  check(goldOf(await page.text('#menu-gold')) === beforeReload.gold, 'le menu affiche l’or importé');
   await page.click('#btn-shop');
   check((await page.text('.shop-row .shop-level')).trim() === '1 / 10', 'les améliorations de la boutique sont restaurées');
   await page.click('#btn-shop-back');
@@ -503,7 +541,7 @@ async function scenario(page, url, viewport) {
   await page.send('Page.navigate', { url: `${url}?debug` });
   await page.waitFor('le rechargement', `!!window.__game && !document.querySelector('#btn-start').disabled`);
   const kept = await page.game();
-  check(kept.gold === quit.gold && kept.selected === 'anne' && kept.weapon === 'aura', 'la sauvegarde importée est conservée après rechargement');
+  check(kept.gold === beforeReload.gold && kept.selected === 'anne' && kept.weapon === 'aura', 'la sauvegarde importée est conservée après rechargement');
 
   // --- Chaque arme à l'écran : rendu sans erreur, arme visible, ennemis touchés ---
   await page.eval('window.__game.addGold(5000)');
@@ -577,12 +615,15 @@ async function scenario(page, url, viewport) {
   await sleep(400);
   check(await page.eval(`!!document.querySelector('.weapon-card[data-id="${legendWeapon}"] .legend-badge')`), 'le badge apparaît à côté de l’arme utilisée');
   check((await page.eval(`document.querySelectorAll('.legend-badge').length`)) === 1, 'une seule arme porte le badge');
+  check((await page.text('#weapon-desc')).includes('Niveau 100 atteint'), 'la description de l’arme choisie écrit « Niveau 100 atteint » (l’info-bulle du trophée est invisible au toucher)');
   // Le badge est propre à la difficulté : il disparaît pour les autres, et revient avec la bonne.
   const otherDifficulty = legendDifficulty === 'hard' ? 'normal' : 'hard';
   await page.click(`.diff-btn[data-id="${otherDifficulty}"]`);
   check((await page.eval(`document.querySelectorAll('.legend-badge').length`)) === 0, 'le badge n’apparaît pas pour une autre difficulté');
+  check(!(await page.text('#weapon-desc')).includes('Niveau 100'), 'la mention « Niveau 100 atteint » non plus');
   await page.click(`.diff-btn[data-id="${legendDifficulty}"]`);
   check((await page.eval(`document.querySelectorAll('.legend-badge').length`)) === 1, 'le badge revient avec la difficulté d’origine');
+  check((await page.text('#weapon-desc')).includes('Niveau 100 atteint'), 'la mention revient aussi');
   await shot('14-badge-legende');
   check(page.problems.length === 0, `aucune erreur ni avertissement dans la console${page.problems.length ? ' :\n' + page.problems.join('\n') : ''}`);
 }
@@ -837,6 +878,7 @@ async function orientationScenario(page, url, device) {
   check((await page.game()).amulet === 'sage', 'l’amulette est équipée');
   await page.tapElement('.amulet-row.equipped .amulet-actions button:nth-child(2)');
   check((await page.text('.amulet-row.equipped .amulet-desc')).includes('Niveau 2'), 'on peut renforcer l’amulette avec un second exemplaire');
+  check((await page.text('#btn-amulet')).includes('×2') && !(await page.eval(`document.querySelector('#btn-amulet').classList.contains('hidden')`)), 'le menu montre l’amulette équipée et son niveau');
   await page.tapElement('#tab-styles');
   await checkReachable(page, 'collection : apparences atteignables', ['.swatch[data-category="projectile"][data-id="crimson"]', '.swatch[data-category="dust"][data-id="default"]', '#btn-collection-back']);
   await page.tapElement('.swatch[data-category="projectile"][data-id="crimson"]');
@@ -852,6 +894,7 @@ async function orientationScenario(page, url, device) {
   const worn = await page.game();
   check(worn.amulets.sage === 1, 'l’amulette (niveau 2) est consommée au lancement : 2 exemplaires sur 3');
   check(worn.amulet === '', 'l’amulette est déséquipée dès que la partie commence, même s’il en reste');
+  check(await page.eval(`document.querySelector('#btn-amulet').classList.contains('hidden')`), 'la pastille de l’amulette disparaît du menu quand l’amulette est consommée');
   check(Math.abs(worn.xpMult - 1.5) < 0.001, `l’amulette renforce le héros pour cette partie (XP ×${worn.xpMult})`);
   await sleep(500);
   // L'interface de jeu laisse passer les appuis vers le terrain : on vérifie qu'elle est visible, et que seul le bouton pause se touche.
@@ -1435,6 +1478,16 @@ function scrollOf(page, selector) {
  * (cinq armes, lien d'installation affiché), ainsi que l'onglet Coffres de la boutique, l'onglet Héros de la collection
  * (avec un héros à acheter regardé), la pause, le choix de niveau et la fin de partie.
  */
+/** Écran des héros : jamais plus de trois cartes par rangée, quelle que soit la taille de l'écran (décision de l'utilisateur : cadres lisibles). */
+async function checkHeroColumns(page, label) {
+  const columns = await page.eval(`(() => {
+    const cards = [...document.querySelectorAll('#characters .char-card')].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0);
+    const top = cards[0].top;
+    return { count: cards.length, perRow: cards.filter((r) => Math.abs(r.top - top) < 4).length };
+  })()`);
+  check(columns.count > 3 && columns.perRow === 3, `${label} : les héros tiennent à 3 par ligne (${columns.perRow} sur la première ligne, ${columns.count} cartes)`);
+}
+
 async function fitScenario(page, url, size) {
   const shot = (name) => page.screenshot(`tient-${size.name}-${name}`);
   await setDevice(page, size.width, size.height);
@@ -1453,6 +1506,16 @@ async function fitScenario(page, url, size) {
   check(!four.hasBar, report('menu à quatre armes', four));
   await shot('1-menu');
 
+  // Annonce de boss : petite à l'horizontale (elle prenait trop de place), mais lisible. Mesurée une fois son animation d'arrivée finie.
+  await page.eval(`window.__game.banner('⚠ Boss ×4 !')`);
+  await sleep(900);
+  const banner = await page.eval(`(() => { const b = document.querySelector('#banner'); const r = b.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, height: r.height, font: parseFloat(getComputedStyle(b).fontSize), w: innerWidth, h: innerHeight }; })()`);
+  check(banner.height <= banner.h * 0.14, `annonce de boss : elle prend peu de hauteur (${Math.round(banner.height)} px sur ${banner.h} px, ${Math.round((banner.height / banner.h) * 100)} %)`);
+  check(banner.font >= 17, `annonce de boss : le texte reste lisible (${Math.round(banner.font)} px)`);
+  check(banner.left >= 0 && banner.right <= banner.w && banner.top >= 0, 'annonce de boss : elle tient dans l’écran');
+  await shot('1-annonce-boss');
+  await sleep(1800);
+
   // Politique de confidentialité, dans le jeu (pas une page à part, qui sortirait du jeu dans l'application installée) : sur le plus
   // petit écran, le texte garde de la place et le bouton Retour reste atteignable.
   await page.click('#btn-credits');
@@ -1466,6 +1529,9 @@ async function fitScenario(page, url, size) {
   check(!(await page.visible('#overlay-privacy')) && (await page.visible('#overlay-credits')), 'fermer la politique de confidentialité ramène aux crédits');
   check((await page.reachable('#btn-credits-back')) === 'ok', 'crédits : le bouton Retour est atteignable au doigt');
   await page.click('#btn-credits-back');
+  await page.click('#version');
+  check((await page.reachable('#btn-changelog-back')) === 'ok', 'nouveautés : le bouton Retour est atteignable au doigt (liste qui défile)');
+  await page.click('#btn-changelog-back');
 
   // Boutique, onglet Coffres : le tableau des coffres tient sans défiler.
   await page.click('#btn-shop');
@@ -1498,6 +1564,17 @@ async function fitScenario(page, url, size) {
     return { limit: innerWidth * 0.52, left: Math.min(...parts.map((r) => r.left)) };
   })()`);
   check(edge.left >= edge.limit - 0.5, `collection, onglet Héros : le texte et les cadres commencent après le dégradé (à ${Math.round(edge.left)} px, dégradé fini à ${Math.round(edge.limit)} px)`);
+  await checkHeroColumns(page, 'collection, onglet Héros');
+  // Les pièces (on y achète des héros) : visibles, dans l'écran, sans cacher le titre, les onglets ni les cartes.
+  const gold = await page.eval(`(() => {
+    const box = (e) => e.getBoundingClientRect();
+    const pill = box(document.querySelector('#collection-gold'));
+    const others = [...document.querySelectorAll('#overlay-collection > h2, #overlay-collection .tabs, #overlay-collection #hero-desc, #overlay-collection #btn-buy-hero:not(.hidden), #overlay-collection #characters .char-card, #overlay-collection > .btn')].map(box).filter((r) => r.width > 0);
+    const overlap = others.some((r) => pill.left < r.right - 1 && pill.right > r.left + 1 && pill.top < r.bottom - 1 && pill.bottom > r.top + 1);
+    return { shown: pill.width > 0, inside: pill.left >= 0 && pill.right <= innerWidth && pill.top >= 0 && pill.bottom <= innerHeight, overlap, text: document.querySelector('#collection-gold').textContent, menu: document.querySelector('#menu-gold').textContent };
+  })()`);
+  check(gold.shown && gold.inside && !gold.overlap, 'collection, onglet Héros : les pièces sont affichées, dans l’écran, sans rien cacher');
+  check(gold.text === gold.menu, 'collection : le nombre de pièces est celui du menu');
   const heroesTabs = await tabsTopOf('#overlay-collection');
   await shot('6-collection-heros');
   await page.click('#btn-collection-back');
@@ -1529,6 +1606,24 @@ async function fitScenario(page, url, size) {
   const amuletsTabs = await tabsTopOf('#overlay-collection');
   check(amuletsTabs.join() === heroesTabs.join(), `collection : le titre et les onglets ne bougent pas non plus sur l'onglet Amulettes (${amuletsTabs.join(' / ')} px)`);
   await shot('9-amulettes');
+  await page.click('#btn-collection-back');
+  // Amulette équipée : sa pastille est au menu (icône et niveau), dans l'écran, sans recouvrir une autre pastille, et le menu tient
+  // toujours sans défiler ; la toucher ouvre la collection sur les amulettes.
+  await sleep(300);
+  const wornMenu = await scrollOf(page, '#overlay-start');
+  check(!wornMenu.hasBar, report('menu avec une amulette équipée', wornMenu));
+  const pill = await page.eval(`(() => {
+    const r = (e) => e.getBoundingClientRect();
+    const p = document.querySelector('#btn-amulet');
+    const box = r(p);
+    const others = [...document.querySelectorAll('.menu-info .pill')].filter((e) => e !== p && !e.classList.contains('hidden')).map(r);
+    return { shown: box.width > 0, inside: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight, text: p.textContent, overlap: others.some((o) => box.left < o.right - 1 && box.right > o.left + 1 && box.top < o.bottom - 1 && box.bottom > o.top + 1), svg: !!p.querySelector('svg, img') };
+  })()`);
+  check(pill.shown && pill.inside && !pill.overlap, `menu : la pastille de l'amulette équipée est visible, dans l'écran, sans recouvrir une autre (${pill.text})`);
+  check(/×\d/.test(pill.text) && pill.svg, 'la pastille montre l’icône et le niveau de l’amulette');
+  check((await page.reachable('#btn-amulet')) === 'ok', 'menu : la pastille de l’amulette est atteignable au doigt');
+  await page.click('#btn-amulet');
+  check((await page.visible('#overlay-collection')) && (await page.visible('#panel-amulets')), 'toucher la pastille ouvre la collection sur les amulettes');
   await page.click('#btn-collection-back');
   await listAt('sauvegarde', ['#btn-save'], '#overlay-save');
   await shot('10-sauvegarde');
@@ -1578,7 +1673,7 @@ async function fitScenario(page, url, size) {
 }
 
 /** Les cadres (cartes, boutons, pastilles, barres...) dont le texte ne doit jamais dépasser. */
-const TEXT_FRAMES = '.odds, .info-btn, .credit, .menu-foot, .weapon-card, .diff-btn, .char-card, .side-btn, .btn, .tab, .pill, .shop-row, .swatch, .amulet-row, .card, .reveal-mini, .reveal-card, .bar, .collection-section, .save-box, #banner, .boss-bar, .stats';
+const TEXT_FRAMES = '.odds, .info-btn, .credit, .menu-foot, .weapon-card, .diff-btn, .char-card, .side-btn, .btn, .tab, .pill, .shop-row, .swatch, .amulet-row, .card, .reveal-mini, .reveal-card, .bar, .collection-section, .save-box, #banner, .boss-bar, .stats, .changelog-item';
 
 /** Liste les textes qui sortent de leur cadre (liste vide : tout tient). */
 function textOverflows(page) {
@@ -1734,6 +1829,9 @@ async function textScenario(page, url, size) {
 
   // --- Boutique et collection ---
   await checkTexts(page, 'menu avec le lien des crédits');
+  await page.click('#version');
+  await checkTexts(page, 'nouveautés');
+  await page.click('#btn-changelog-back');
   await page.click('#btn-credits');
   await page.click('#overlay-credits details summary');
   await checkTexts(page, 'crédits et licences');
@@ -1752,6 +1850,7 @@ async function textScenario(page, url, size) {
   await page.click('#btn-shop-back');
   await page.click('#btn-collection');
   await checkTexts(page, 'collection (héros)');
+  await checkHeroColumns(page, 'collection (héros)');
   await shot('3-collection-heros');
   await page.click('.char-card[data-id="matt"]');
   await checkTexts(page, 'collection (héros à acheter, bouton Acheter)');

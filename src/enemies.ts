@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { SeparationGrid, SpatialIndex } from './grid';
 import type { Player } from './player';
 import { rand, random } from './rng';
-import { spawnOutside } from './spawn';
+import { BOSS_SPAWN_DISTANCE, MIN_SPAWN_DISTANCE, spawnOutside } from './spawn';
 import { ARENA, FENCE, toonMaterial } from './world';
 
 export interface EnemyType {
@@ -516,7 +516,7 @@ export class Enemies {
 
     const hp = type.hp * (1 + time / 90) * this.mods.hp;
     // À l'extérieur de la clôture, dans une direction tirée autour du héros (voir src/spawn.ts).
-    const at = spawnOutside(aroundX, aroundZ, FENCE + type.radius + SPAWN_GAP, () => rand(0, Math.PI * 2));
+    const at = spawnOutside(aroundX, aroundZ, FENCE + type.radius + SPAWN_GAP, () => rand(0, Math.PI * 2), type.boss ? BOSS_SPAWN_DISTANCE : MIN_SPAWN_DISTANCE);
     const enemy: Enemy = {
       x: at.x,
       z: at.z,

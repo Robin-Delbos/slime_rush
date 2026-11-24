@@ -34,9 +34,10 @@ La version du jeu est un numéro `0.x.y` affiché en petit sous les boutons du m
 1. Vérifier qu'elle n'a **pas déjà été augmentée** pour ce commit : comparer `package.json` avec `git show HEAD:package.json`. Si le numéro diffère déjà, ne pas l'augmenter une seconde fois.
 2. Augmenter sans créer de tag ni de commit : `npm version minor --no-git-tag-version` (ou `patch`). Cela met à jour `package.json` **et** `package-lock.json` ; les deux fichiers font partie du commit.
 3. Faire cela **avant** le lancement des tests complets, pour que les tests et la compilation portent déjà la nouvelle version.
-4. Le message de commit n'a pas besoin d'une ligne dédiée, mais si la version change, ajouter dans le corps une ligne « Version : 0.x.y ».
-5. Après le push, **vérifier que le tag et la release existent** (voir ci-dessous) et le dire dans le compte rendu.
-6. Dans le compte rendu à l'utilisateur, **annoncer la version** (ancienne → nouvelle) ou dire qu'elle n'a pas changé, et pourquoi.
+4. Ajouter l'entrée de la nouvelle version **en premier** dans `src/changelog.ts` (journal des nouveautés du menu), en ne disant que ce qui sert au joueur ; `tests/changelog.test.ts` échoue si elle manque.
+5. Le message de commit n'a pas besoin d'une ligne dédiée, mais si la version change, ajouter dans le corps une ligne « Version : 0.x.y ».
+6. Après le push, **vérifier que le tag et la release existent** (voir ci-dessous) et le dire dans le compte rendu.
+7. Dans le compte rendu à l'utilisateur, **annoncer la version** (ancienne → nouvelle) ou dire qu'elle n'a pas changé, et pourquoi.
 
 ## Tag et release
 

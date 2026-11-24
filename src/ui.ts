@@ -5,6 +5,7 @@ import { CHEST_BUNDLE, CHEST_ODDS_NOTE, chestOddsTable, formatChance, rewardView
 import { REVEAL_TIMING, RevealFlow } from './reveal';
 import { CATEGORIES, CATEGORY_HELP, CATEGORY_LABELS, CATEGORY_WEAPONS, COSMETICS, type CosmeticCategory } from './cosmetics';
 import { WEAPON_PREFIX } from './upgrades';
+import { CHANGELOG, CHANGE_LABELS, formatReleaseDate } from './changelog';
 import { CREDITS, THREE_LICENSE } from './credits';
 import { VERSION_LABEL } from './version';
 import { WEAPONS } from './weaponData';
@@ -157,6 +158,7 @@ export class Ui {
   private playButton = el<HTMLButtonElement>('btn-start');
   private saveScreen = el('overlay-save');
   private credits = el('overlay-credits');
+  private changelog = el('overlay-changelog');
   private collection = el('overlay-collection');
   private reveal = el('overlay-reveal');
   private revealStage = el('reveal-stage');
@@ -200,6 +202,7 @@ export class Ui {
     });
     this.bindSaveScreen();
     this.bindCredits();
+    this.bindChangelog();
     this.fillChestOdds();
     this.bindChestScreens();
     el('version').textContent = VERSION_LABEL;
@@ -250,6 +253,36 @@ export class Ui {
     el('btn-privacy-back').addEventListener('click', () => {
       handlers.onNavigate();
       privacy.classList.add('hidden');
+    });
+  }
+
+  /** Écran « Nouveautés » : un menu déroulant par version, la plus récente ouverte ; on y arrive en touchant la version au menu. */
+  private bindChangelog(): void {
+    const { handlers } = this;
+    const list = el('changelog-list');
+    CHANGELOG.forEach((release, index) => {
+      const box = make('details', 'odds changelog-release');
+      box.open = index === 0;
+      const title = make('summary', '', `v${release.version}`);
+      title.append(make('span', 'changelog-date', formatReleaseDate(release.date)));
+      const items = make('ul', 'changelog-items');
+      for (const change of release.changes) {
+        const item = make('li', 'changelog-item');
+        item.append(make('span', `changelog-kind ${change.kind}`, CHANGE_LABELS[change.kind]), document.createTextNode(change.text));
+        items.append(item);
+      }
+      box.append(title, items);
+      list.append(box);
+    });
+    el('version').addEventListener('click', () => {
+      handlers.onNavigate();
+      this.changelog.classList.remove('hidden');
+      this.updateCover();
+    });
+    el('btn-changelog-back').addEventListener('click', () => {
+      handlers.onNavigate();
+      this.changelog.classList.add('hidden');
+      this.updateCover();
     });
   }
 
@@ -384,12 +417,29 @@ export class Ui {
     this.playButton.textContent = 'Jouer';
   }
 
+  /** Pastille du menu : l'amulette équipée pour la prochaine partie, avec son niveau (cachée s'il n'y en a pas). */
+  private refreshAmuletPill(): void {
+    const { save } = this;
+    const pill = el('btn-amulet');
+    const worn = save.amulet ? amuletOf(save.amulet) : undefined;
+    const count = worn ? (save.amulets[worn.id] ?? 0) : 0;
+    pill.classList.toggle('hidden', !worn || count < 1);
+    if (!worn || count < 1) return;
+    const level = Math.min(save.amuletLevel, count, AMULET_MAX_LEVEL);
+    const label = `Amulette équipée : ${worn.name}, niveau ${level}`;
+    pill.title = label;
+    pill.setAttribute('aria-label', label);
+    pill.replaceChildren(iconElement('pill-icon', worn.icon), make('span', 'pill-level', `×${level}`));
+  }
+
   /** Redessine le menu et la boutique d'après la sauvegarde. */
   refresh(): void {
     const { save } = this;
     el('menu-gold').textContent = `🪙 ${save.gold}`;
     el('shop-gold').textContent = `🪙 ${save.gold}`;
+    el('collection-gold').textContent = `🪙 ${save.gold}`;
     el('best-start').textContent = save.bestTime > 0 ? `🏆 ${formatTime(save.bestTime)}` : '🏆 --:--';
+    this.refreshAmuletPill();
     el('btn-sound').textContent = save.muted ? '🔇' : '🔊';
     // Tout le son coupé : la musique l'est aussi, et son bouton est grisé (on ne peut la remettre qu'avec le son).
     const musicOn = save.music && !save.muted;
@@ -469,7 +519,11 @@ export class Ui {
     weapons.style.setProperty('--count', String(Math.max(1, weapons.children.length)));
 
     const chosen = WEAPONS.find((w) => w.id === save.weapon) ?? WEAPONS[0];
-    el('weapon-desc').textContent = `${chosen.name} : ${chosen.desc}`;
+    const weaponDesc = el('weapon-desc');
+    weaponDesc.textContent = `${chosen.name} : ${chosen.desc}`;
+    // Le trophée du coin de la tuile n'a qu'une info-bulle (invisible au toucher) : la même information est écrite ici.
+    // Le badge ne vaut que pour la difficulté choisie, donc la mention aussi.
+    if (hasLegend(save, chosen.id)) weaponDesc.append(' · ', make('span', 'legend-note', '🏆 Niveau 100 atteint'));
 
     const difficulty = el('difficulty');
     difficulty.replaceChildren();
@@ -596,7 +650,7 @@ private refreshChests(): void {
 
   /** Cache le menu principal tant qu'un écran (boutique, collection, sauvegarde) est ouvert par-dessus : rien ne transparaît. */
   private updateCover(): void {
-    const covered = [this.shop, this.saveScreen, this.credits, this.collection].some((screen) => !screen.classList.contains('hidden'));
+    const covered = [this.shop, this.saveScreen, this.credits, this.changelog, this.collection].some((screen) => !screen.classList.contains('hidden'));
     this.start.classList.toggle('covered', covered);
     this.syncPreview();
   }
@@ -652,6 +706,7 @@ private refreshChests(): void {
       this.shop.classList.add('hidden');
       this.saveScreen.classList.add('hidden');
       this.credits.classList.add('hidden');
+      this.changelog.classList.add('hidden');
       this.collection.classList.add('hidden');
       screen.classList.remove('hidden');
       this.updateCover();
@@ -659,6 +714,11 @@ private refreshChests(): void {
     // L'écran s'ouvre sur le dernier onglet regardé.
     el('btn-shop').addEventListener('click', () => open(this.shop));
     el('btn-collection').addEventListener('click', () => open(this.collection));
+    // La pastille de l'amulette équipée mène directement à l'onglet des amulettes (pour la changer ou la retirer).
+    el('btn-amulet').addEventListener('click', () => {
+      open(this.collection);
+      this.setTab(this.collection, 'amulets');
+    });
     for (const screen of [this.shop, this.collection]) {
       for (const tab of screen.querySelectorAll<HTMLElement>('.tab')) {
         tab.addEventListener('click', () => {
@@ -968,21 +1028,21 @@ private clearChestTimers(): void {
    * La collection n'en fait pas partie : elle montre le héros en 3D.
    */
   get sceneCovered(): boolean {
-    return [this.shop, this.saveScreen, this.credits, this.reveal].some((screen) => !screen.classList.contains('hidden'));
+    return [this.shop, this.saveScreen, this.credits, this.changelog, this.reveal].some((screen) => !screen.classList.contains('hidden'));
   }
 
   showMenu(): void {
     this.written.clear();
     this.lowHp.classList.remove('active');
     this.refresh();
-    for (const node of [this.hud, this.shop, this.saveScreen, this.credits, this.collection, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
+    for (const node of [this.hud, this.shop, this.saveScreen, this.credits, this.changelog, this.collection, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
     this.start.classList.remove('hidden');
     this.updateCover();
   }
 
   showGame(): void {
     this.written.clear();
-    for (const node of [this.start, this.shop, this.saveScreen, this.credits, this.collection, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
+    for (const node of [this.start, this.shop, this.saveScreen, this.credits, this.changelog, this.collection, this.levelUp, this.pause, this.gameOver]) node.classList.add('hidden');
     this.hud.classList.remove('hidden');
   }
 

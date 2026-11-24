@@ -6,8 +6,15 @@
  * le plus proche du héros quand il longe un bord.
  */
 
-/** Distance minimale au héros : un ennemi n'apparaît jamais plus près qu'avant (il tombait sur un cercle de 26 unités). */
-export const MIN_SPAWN_DISTANCE = 26;
+/**
+ * Distance minimale au héros pour les ennemis ordinaires. Elle est courte à dessein : un héros collé à un bord ou dans un coin voit
+ * des ennemis surgir juste derrière la clôture, au lieu de les attendre en file venue de l'autre bout de l'arène (le camping dans
+ * un coin était trop sûr). Au centre de l'arène, la clôture est à plus de 40 unités : rien n'y change.
+ */
+export const MIN_SPAWN_DISTANCE = 3;
+
+/** Distance minimale au héros pour les boss : plus longue, leurs attaques annoncées demandent le temps de réagir. */
+export const BOSS_SPAWN_DISTANCE = 26;
 
 /** Nombre de directions tirées avant le repli (héros collé à un bord : une bonne partie des directions donne un point trop proche). */
 const ATTEMPTS = 8;
